@@ -38,8 +38,9 @@ Notes on `ts`:
   - payload fields: `stack_status`, `stack_mode`, `stack` (`stack` only when status is `"ok"`);
   - uses V8 `RequestInterrupt` (JS busy-loop stacks; sync I/O / native blocks may yield `unavailable`);
   - stack frames may include absolute file paths — treat logs as sensitive when enabled;
-  - if the loaded native addon was built for a different `process.version`, `captureStack` is
-    disabled with a process warning (avoid V8 ABI crashes); rebuild with `npm rebuild @js-ak/watchdog`.
+  - if the loaded native addon ABI (`NODE_MODULE_VERSION`) differs from the
+    runtime (no matching published prebuild for this Node major),
+    `captureStack` is disabled with a warning.
 
 ## Behavioral guarantees
 
