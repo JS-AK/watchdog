@@ -1,3 +1,11 @@
+## [1.2.4](https://github.com/JS-AK/watchdog/compare/v1.2.3...v1.2.4) (2026-07-22)
+
+
+### Bug Fixes
+
+* build prebuilds with --no-napi for Node 22/24/26 ([cd0b970](https://github.com/JS-AK/watchdog/commit/cd0b97000c150921a74b30f06c5717bd8408f7cb))
+* **test:** widen freeze window so heartbeat is reliable ([718d7a5](https://github.com/JS-AK/watchdog/commit/718d7a51ef2050b118de90c17e9868c47e8e1614))
+
 ## [1.2.3](https://github.com/JS-AK/watchdog/compare/v1.2.2...v1.2.3) (2026-07-22)
 
 
