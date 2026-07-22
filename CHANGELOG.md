@@ -1,3 +1,11 @@
+## [1.2.1](https://github.com/JS-AK/watchdog/compare/v1.2.0...v1.2.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* do not emit via N-API from V8 stack interrupt ([bdeeb8d](https://github.com/JS-AK/watchdog/commit/bdeeb8d71a8f84e828b18a72c93f6d168acde346))
+* **test:** run node test files serially ([a8c3b43](https://github.com/JS-AK/watchdog/commit/a8c3b43387fe79107150c30c173ec45755805aea))
+
 # [1.2.0](https://github.com/JS-AK/watchdog/compare/v1.1.2...v1.2.0) (2026-07-22)
 
 
