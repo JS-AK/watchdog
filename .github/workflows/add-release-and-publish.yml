@@ -13,11 +13,55 @@ permissions:
   id-token: write
 
 jobs:
+  prebuild:
+    name: prebuild (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: win32-x64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+          - os: macos-14
+            target: darwin-arm64
+          - os: macos-13
+            target: darwin-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build prebuild
+        run: npm run prebuild
+
+      - name: Smoke load prebuild
+        run: npm run smoke:prebuild
+
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.target }}
+          path: prebuilds/
+          if-no-files-found: error
+
   release:
     name: Release
+    needs: prebuild
     runs-on: ubuntu-latest
     steps:
-
       - name: Checkout
         uses: actions/checkout@v7
         with:
@@ -29,7 +73,17 @@ jobs:
         with:
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-          cache: 'npm'
+          cache: npm
+
+      - name: Download all prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: prebuild-*
+          merge-multiple: true
+          path: prebuilds
+
+      - name: Show prebuilds layout
+        run: find prebuilds -type f | sort
 
       - name: Install dependencies
         run: npm ci

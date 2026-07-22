@@ -10,11 +10,21 @@
   "types": "src/index.d.ts",
   "files": [
     "src",
+    "native",
+    "prebuilds",
+    "binding.gyp",
     "README.md",
+    "COMPATIBILITY.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "install": "node-gyp-build",
+    "rebuild": "node-gyp rebuild",
+    "build": "node-gyp rebuild",
+    "prebuild": "prebuildify --napi --strip",
+    "test": "node --test test/lifecycle.test.js test/freeze.integration.test.js test/logging.integration.test.js test/hardening.test.js",
+    "test:hardening": "node --test test/hardening.test.js",
+    "smoke:prebuild": "node scripts/smoke-prebuild.js"
   },
   "repository": {
     "type": "git",
@@ -35,7 +45,11 @@
   },
   "homepage": "https://github.com/JS-AK/watchdog#readme",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.17.0"
+  },
+  "gypfile": true,
+  "dependencies": {
+    "node-gyp-build": "4.8.4"
   },
   "devDependencies": {
     "@semantic-release/changelog": "7.0.0",
@@ -44,6 +58,8 @@
     "@semantic-release/github": "12.0.9",
     "@semantic-release/npm": "13.1.5",
     "@semantic-release/release-notes-generator": "14.1.1",
+    "node-gyp": "13.0.1",
+    "prebuildify": "6.0.1",
     "semantic-release": "25.0.8"
   }
 }

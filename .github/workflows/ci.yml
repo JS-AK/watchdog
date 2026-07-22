@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, dev]
+  pull_request:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }} / Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+        node: [20, 22, 24]
+        include:
+          - os: ubuntu-24.04-arm
+            node: 22
+          - os: macos-13
+            node: 22
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native addon
+        run: npm run rebuild
+
+      - name: Test
+        run: npm test
+
+      - name: Smoke load
+        run: npm run smoke:prebuild

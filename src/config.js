@@ -18,6 +18,19 @@ function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function assertPositiveIntInRange(name, value) {
+  if (typeof value !== "number" || !Number.isInteger(value)) {
+    throw new TypeError(
+      `${name} must be a positive integer, got ${describeValue(value)}`,
+    );
+  }
+  if (value < MIN_MS || value > MAX_MS) {
+    throw new RangeError(
+      `${name} must be between ${MIN_MS} and ${MAX_MS}, got ${value}`,
+    );
+  }
+}
+
 function describeValue(value) {
   if (value === null) {
     return "null";
@@ -32,19 +45,6 @@ function describeValue(value) {
     return "array";
   }
   return typeof value;
-}
-
-function assertPositiveIntInRange(name, value) {
-  if (typeof value !== "number" || !Number.isInteger(value)) {
-    throw new TypeError(
-      `${name} must be a positive integer, got ${describeValue(value)}`,
-    );
-  }
-  if (value < MIN_MS || value > MAX_MS) {
-    throw new RangeError(
-      `${name} must be between ${MIN_MS} and ${MAX_MS}, got ${value}`,
-    );
-  }
 }
 
 function normalizeConfig(userConfig = {}) {
