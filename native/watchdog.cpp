@@ -22,6 +22,7 @@ Watchdog::Watchdog() : logger_(std::make_unique<Logger>()) {}
 Watchdog::~Watchdog() { Stop(); }
 
 void Watchdog::SetEventCallback(EventCallback callback) {
+  std::lock_guard<std::mutex> lock(on_event_mutex_);
   on_event_ = std::move(callback);
 }
 
@@ -68,8 +69,13 @@ void Watchdog::Emit(Event event) {
 
   logger_->LogEvent(event);
 
-  if (on_event_) {
-    on_event_(event);
+  EventCallback callback;
+  {
+    std::lock_guard<std::mutex> lock(on_event_mutex_);
+    callback = on_event_;
+  }
+  if (callback) {
+    callback(event);
   }
 }
 
@@ -79,6 +85,17 @@ void Watchdog::MonitorLoop() {
   uint64_t freeze_id = 0;
   uint64_t last_heartbeat_at_ms = 0;
   uint32_t sequence = 0;
+
+  auto emit = [&](EventType type, uint64_t duration_ms) {
+    Event event;
+    event.type = type;
+    event.freeze_id = freeze_id;
+    event.duration_ms = duration_ms;
+    event.threshold_ms = config_.freeze_threshold_ms;
+    event.heartbeat_ms = config_.heartbeat_ms;
+    event.sequence = sequence;
+    Emit(event);
+  };
 
   while (running_.load(std::memory_order_acquire)) {
     const uint64_t now = NowMs();
@@ -91,39 +108,15 @@ void Watchdog::MonitorLoop() {
       freeze_id += 1;
       sequence = 0;
       last_heartbeat_at_ms = now;
-
-      Event event;
-      event.type = EventType::FreezeStarted;
-      event.freeze_id = freeze_id;
-      event.duration_ms = lag;
-      event.threshold_ms = config_.freeze_threshold_ms;
-      event.heartbeat_ms = config_.heartbeat_ms;
-      event.sequence = sequence;
-      Emit(event);
+      emit(EventType::FreezeStarted, lag);
     } else if (frozen && lag >= config_.freeze_threshold_ms) {
       if (now - last_heartbeat_at_ms >= config_.heartbeat_ms) {
         sequence += 1;
         last_heartbeat_at_ms = now;
-
-        Event event;
-        event.type = EventType::FreezeHeartbeat;
-        event.freeze_id = freeze_id;
-        event.duration_ms = now - freeze_began_at_ms;
-        event.threshold_ms = config_.freeze_threshold_ms;
-        event.heartbeat_ms = config_.heartbeat_ms;
-        event.sequence = sequence;
-        Emit(event);
+        emit(EventType::FreezeHeartbeat, now - freeze_began_at_ms);
       }
     } else if (frozen && lag < config_.freeze_threshold_ms) {
-      Event event;
-      event.type = EventType::FreezeRecovered;
-      event.freeze_id = freeze_id;
-      event.duration_ms = now - freeze_began_at_ms;
-      event.threshold_ms = config_.freeze_threshold_ms;
-      event.heartbeat_ms = config_.heartbeat_ms;
-      event.sequence = sequence;
-      Emit(event);
-
+      emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
       frozen = false;
       freeze_began_at_ms = 0;
       last_heartbeat_at_ms = 0;
@@ -131,6 +124,12 @@ void Watchdog::MonitorLoop() {
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+
+  // Close out an in-flight freeze when stop() interrupts the monitor.
+  if (frozen) {
+    const uint64_t now = NowMs();
+    emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
   }
 }
 

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -68,6 +69,7 @@ class Watchdog {
 
   Config config_{};
   EventCallback on_event_;
+  std::mutex on_event_mutex_;
   std::unique_ptr<Logger> logger_;
   std::atomic<bool> running_{false};
   std::atomic<uint64_t> last_kick_ms_{0};

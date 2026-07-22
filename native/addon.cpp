@@ -10,7 +10,6 @@ namespace {
 struct AddonState {
   std::unique_ptr<jsak::watchdog::Watchdog> watchdog;
   napi_threadsafe_function tsfn = nullptr;
-  napi_ref js_callback_ref = nullptr;
 };
 
 struct TsfnEvent {
@@ -101,31 +100,30 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
   delete payload;
 }
 
-void ReleaseTsfn(AddonState* state) {
+void ReleaseTsfn(AddonState* state,
+                 napi_threadsafe_function_release_mode mode) {
   if (state->tsfn != nullptr) {
-    napi_release_threadsafe_function(state->tsfn, napi_tsfn_abort);
+    napi_release_threadsafe_function(state->tsfn, mode);
     state->tsfn = nullptr;
   }
 }
 
-void ClearEventBridge(AddonState* state) {
+void ClearEventBridge(AddonState* state,
+                      napi_threadsafe_function_release_mode mode) {
   if (state->watchdog) {
     state->watchdog->SetEventCallback(nullptr);
   }
-  ReleaseTsfn(state);
+  ReleaseTsfn(state, mode);
 }
 
-void FinalizeState(napi_env env, void* data, void* /*hint*/) {
+void FinalizeState(napi_env /*env*/, void* data, void* /*hint*/) {
   auto* state = static_cast<AddonState*>(data);
   if (state->watchdog) {
     state->watchdog->Stop();
     state->watchdog.reset();
   }
-  ClearEventBridge(state);
-  if (state->js_callback_ref != nullptr && env != nullptr) {
-    napi_delete_reference(env, state->js_callback_ref);
-    state->js_callback_ref = nullptr;
-  }
+  // Abort: process/env is going away; do not wait on pending JS callbacks.
+  ClearEventBridge(state, napi_tsfn_abort);
   delete state;
 }
 
@@ -165,81 +163,88 @@ void NativeEmit(AddonState* state, const jsak::watchdog::Event& event) {
   }
 }
 
+bool ReadConfig(napi_env env, napi_value object,
+                jsak::watchdog::Config* config) {
+  napi_valuetype type;
+  napi_typeof(env, object, &type);
+  if (type != napi_object) {
+    return false;
+  }
+
+  napi_value value;
+
+  if (napi_get_named_property(env, object, "freezeThresholdMs", &value) ==
+      napi_ok) {
+    uint32_t n = 0;
+    if (napi_get_value_uint32(env, value, &n) == napi_ok && n > 0) {
+      config->freeze_threshold_ms = n;
+    }
+  }
+
+  if (napi_get_named_property(env, object, "heartbeatMs", &value) == napi_ok) {
+    uint32_t n = 0;
+    if (napi_get_value_uint32(env, value, &n) == napi_ok && n > 0) {
+      config->heartbeat_ms = n;
+    }
+  }
+
+  if (napi_get_named_property(env, object, "logTarget", &value) == napi_ok) {
+    size_t len = 0;
+    napi_get_value_string_utf8(env, value, nullptr, 0, &len);
+    std::string target(len, '\0');
+    if (napi_get_value_string_utf8(env, value, target.data(), len + 1, &len) ==
+        napi_ok) {
+      if (target == "stderr") {
+        config->log_target = jsak::watchdog::LogTarget::Stderr;
+      } else if (target == "file") {
+        config->log_target = jsak::watchdog::LogTarget::File;
+      } else if (target == "both") {
+        config->log_target = jsak::watchdog::LogTarget::Both;
+      }
+    }
+  }
+
+  if (napi_get_named_property(env, object, "logFile", &value) == napi_ok) {
+    size_t len = 0;
+    napi_get_value_string_utf8(env, value, nullptr, 0, &len);
+    std::string path(len, '\0');
+    if (napi_get_value_string_utf8(env, value, path.data(), len + 1, &len) ==
+            napi_ok &&
+        !path.empty()) {
+      config->log_file = path;
+    }
+  }
+
+  return true;
+}
+
 napi_value Start(napi_env env, napi_callback_info info) {
   size_t argc = 2;
   napi_value argv[2];
   napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
-
-  jsak::watchdog::Config config;
-
-  if (argc >= 1) {
-    napi_valuetype type;
-    napi_typeof(env, argv[0], &type);
-    if (type == napi_object) {
-      napi_value value;
-
-      if (napi_get_named_property(env, argv[0], "freezeThresholdMs", &value) ==
-          napi_ok) {
-        uint32_t n = 0;
-        if (napi_get_value_uint32(env, value, &n) == napi_ok && n > 0) {
-          config.freeze_threshold_ms = n;
-        }
-      }
-
-      if (napi_get_named_property(env, argv[0], "heartbeatMs", &value) ==
-          napi_ok) {
-        uint32_t n = 0;
-        if (napi_get_value_uint32(env, value, &n) == napi_ok && n > 0) {
-          config.heartbeat_ms = n;
-        }
-      }
-
-      if (napi_get_named_property(env, argv[0], "logTarget", &value) ==
-          napi_ok) {
-        size_t len = 0;
-        napi_get_value_string_utf8(env, value, nullptr, 0, &len);
-        std::string target(len, '\0');
-        if (napi_get_value_string_utf8(env, value, target.data(), len + 1,
-                                       &len) == napi_ok) {
-          if (target == "stderr") {
-            config.log_target = jsak::watchdog::LogTarget::Stderr;
-          } else if (target == "file") {
-            config.log_target = jsak::watchdog::LogTarget::File;
-          } else if (target == "both") {
-            config.log_target = jsak::watchdog::LogTarget::Both;
-          }
-        }
-      }
-
-      if (napi_get_named_property(env, argv[0], "logFile", &value) == napi_ok) {
-        size_t len = 0;
-        napi_get_value_string_utf8(env, value, nullptr, 0, &len);
-        std::string path(len, '\0');
-        if (napi_get_value_string_utf8(env, value, path.data(), len + 1,
-                                       &len) == napi_ok &&
-            !path.empty()) {
-          config.log_file = path;
-        }
-      }
-    }
-  }
 
   AddonState* state = GetState(env);
   if (!state->watchdog) {
     state->watchdog = std::make_unique<jsak::watchdog::Watchdog>();
   }
 
+  // Do not rebuild the event bridge while the monitor thread is live.
+  if (state->watchdog->IsRunning()) {
+    napi_value result;
+    napi_get_boolean(env, false, &result);
+    return result;
+  }
+
+  jsak::watchdog::Config config;
+  if (argc >= 1) {
+    ReadConfig(env, argv[0], &config);
+  }
+
   if (argc >= 2) {
     napi_valuetype cb_type;
     napi_typeof(env, argv[1], &cb_type);
     if (cb_type == napi_function) {
-      if (state->js_callback_ref != nullptr) {
-        napi_delete_reference(env, state->js_callback_ref);
-        state->js_callback_ref = nullptr;
-      }
-      napi_create_reference(env, argv[1], 1, &state->js_callback_ref);
-
-      ReleaseTsfn(state);
+      ReleaseTsfn(state, napi_tsfn_abort);
       if (EnsureTsfn(env, state, argv[1]) != napi_ok) {
         napi_throw_error(env, nullptr, "failed to create threadsafe function");
         napi_value result;
@@ -264,14 +269,11 @@ napi_value Start(napi_env env, napi_callback_info info) {
 napi_value Stop(napi_env env, napi_callback_info /*info*/) {
   AddonState* state = GetState(env);
   if (state->watchdog) {
+    // Join monitor first so a final freeze_recovered can still use the bridge.
     state->watchdog->Stop();
   }
-  ClearEventBridge(state);
-
-  if (state->js_callback_ref != nullptr) {
-    napi_delete_reference(env, state->js_callback_ref);
-    state->js_callback_ref = nullptr;
-  }
+  // Release (not abort) so the stop-time recovered callback can drain.
+  ClearEventBridge(state, napi_tsfn_release);
 
   napi_value undefined;
   napi_get_undefined(env, &undefined);
