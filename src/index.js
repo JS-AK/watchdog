@@ -1,23 +1,38 @@
 "use strict";
 
 const { EventEmitter } = require("node:events");
-const { DEFAULTS, normalizeConfig } = require("./config");
+const loadAddon = require("node-gyp-build");
+const path = require("node:path");
+const { normalizeConfig, DEFAULTS } = require("./config");
 
-const WIP = "work in progress";
 const EVENT_NAMES = new Set(["freeze", "recovered", "event", "error"]);
 
+const addon = loadAddon(path.join(__dirname, ".."));
 const bus = new EventEmitter();
-let activeConfig = null;
-let running = false;
-let wipWarned = false;
 
-function warnWip(method) {
-  if (!wipWarned) {
-    wipWarned = true;
-    console.warn(
-      `[@js-ak/watchdog] ${WIP}: native freeze detection is not implemented yet (${method})`,
-    );
-  }
+let tickTimer = null;
+let activeConfig = null;
+
+function enrich(nativeEvent) {
+  return {
+    ts: new Date().toISOString(),
+    pid: nativeEvent.pid || process.pid,
+    event: nativeEvent.event,
+    freeze_id: nativeEvent.freeze_id,
+    duration_ms: nativeEvent.duration_ms,
+    threshold_ms: nativeEvent.threshold_ms,
+    heartbeat_ms: nativeEvent.heartbeat_ms,
+    sequence: nativeEvent.sequence,
+    rss_mb: nativeEvent.rss_mb,
+    cpu_pct: nativeEvent.cpu_pct,
+  };
+}
+
+function onNativeEvent(nativeEvent) {
+  const payload = enrich(nativeEvent);
+  const channel = nativeEvent.channel || "freeze";
+  bus.emit(channel, payload);
+  bus.emit("event", payload);
 }
 
 function assertEventName(event) {
@@ -35,34 +50,57 @@ function assertListener(listener) {
 }
 
 function start(userConfig = {}) {
-  warnWip("start");
   const config = normalizeConfig(userConfig);
-  if (running) {
+  const started = addon.start(
+    {
+      freezeThresholdMs: config.freezeThresholdMs,
+      heartbeatMs: config.heartbeatMs,
+      logTarget: config.logTarget,
+      logFile: path.resolve(config.logFile),
+    },
+    onNativeEvent,
+  );
+
+  if (!started) {
     return false;
   }
+
   activeConfig = Object.freeze({ ...config });
-  running = true;
+
+  if (tickTimer) {
+    clearInterval(tickTimer);
+  }
+
+  // Event-loop progress marker. Native side compares this kick lag to threshold.
+  tickTimer = setInterval(() => {
+    addon.kick();
+  }, Math.min(50, Math.max(10, Math.floor(config.freezeThresholdMs / 20))));
+
+  if (typeof tickTimer.unref === "function") {
+    tickTimer.unref();
+  }
+
   return true;
 }
 
 function stop() {
-  warnWip("stop");
+  if (tickTimer) {
+    clearInterval(tickTimer);
+    tickTimer = null;
+  }
+  addon.stop();
   activeConfig = null;
-  running = false;
 }
 
 function isRunning() {
-  warnWip("isRunning");
-  return running;
+  return addon.isRunning();
 }
 
 function getConfig() {
-  warnWip("getConfig");
   return activeConfig;
 }
 
 function on(event, listener) {
-  warnWip("on");
   assertEventName(event);
   assertListener(listener);
   bus.on(event, listener);
@@ -70,7 +108,6 @@ function on(event, listener) {
 }
 
 function once(event, listener) {
-  warnWip("once");
   assertEventName(event);
   assertListener(listener);
   bus.once(event, listener);
@@ -78,7 +115,6 @@ function once(event, listener) {
 }
 
 function off(event, listener) {
-  warnWip("off");
   assertEventName(event);
   assertListener(listener);
   bus.off(event, listener);
@@ -86,7 +122,6 @@ function off(event, listener) {
 }
 
 function removeAllListeners(event) {
-  warnWip("removeAllListeners");
   if (event === undefined) {
     bus.removeAllListeners();
     return api;
@@ -106,8 +141,9 @@ const api = {
   off,
   removeAllListeners,
   DEFAULTS,
-  /** Stub marker until native core lands. */
-  status: WIP,
+  // Internal helpers for tests. Not part of the stable public API.
+  _bus: bus,
+  _addon: addon,
 };
 
 module.exports = api;
