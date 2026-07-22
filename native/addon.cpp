@@ -1,4 +1,5 @@
 #include <node_api.h>
+#include <node_version.h>
 
 #include <memory>
 #include <string>
@@ -333,8 +334,12 @@ napi_value Start(napi_env env, napi_callback_info info) {
     }
   }
 
-  // Capture isolate on the JS thread; RequestInterrupt is issued from monitor.
-  state->watchdog->SetIsolate(v8::Isolate::GetCurrent());
+  // Isolate is only needed for opt-in stack capture (V8 RequestInterrupt).
+  if (config.capture_stack) {
+    state->watchdog->SetIsolate(v8::Isolate::GetCurrent());
+  } else {
+    state->watchdog->SetIsolate(nullptr);
+  }
 
   const bool started = state->watchdog->Start(config);
 
@@ -391,6 +396,13 @@ napi_value Init(napi_env env, napi_value exports) {
   };
 
   napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props);
+
+  // Exact Node version this .node was compiled against (V8 C++ ABI sensitive).
+  napi_value built_with_node;
+  napi_create_string_utf8(env, NODE_VERSION, NAPI_AUTO_LENGTH,
+                          &built_with_node);
+  napi_set_named_property(env, exports, "builtWithNode", built_with_node);
+
   return exports;
 }
 
