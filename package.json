@@ -23,8 +23,8 @@
     "rebuild": "node-gyp rebuild",
     "build": "node-gyp rebuild",
     "prebuild": "prebuildify --napi --strip",
-    "test": "node --test test/lifecycle.test.js test/freeze.integration.test.js test/logging.integration.test.js test/hardening.test.js test/stack.integration.test.js",
-    "test:hardening": "node --test test/hardening.test.js",
+    "test": "node --test --test-concurrency=1 test/lifecycle.test.js test/freeze.integration.test.js test/logging.integration.test.js test/hardening.test.js test/stack.integration.test.js",
+    "test:hardening": "node --test --test-concurrency=1 test/hardening.test.js",
     "smoke:prebuild": "node scripts/smoke-prebuild.js"
   },
   "repository": {

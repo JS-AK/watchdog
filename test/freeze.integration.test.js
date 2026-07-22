@@ -27,10 +27,12 @@ describe("freeze detection", () => {
 
   before(() => {
     watchdog.stop();
+    watchdog.removeAllListeners();
   });
 
   after(() => {
     watchdog.stop();
+    watchdog.removeAllListeners();
     try {
       fs.unlinkSync(logFile);
     } catch {
