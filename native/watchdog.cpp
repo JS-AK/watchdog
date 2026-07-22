@@ -4,6 +4,7 @@
 
 #include "logger.h"
 #include "metrics.h"
+#include "stack_capture.h"
 
 namespace jsak {
 namespace watchdog {
@@ -15,6 +16,25 @@ uint64_t NowMs() {
       .count();
 }
 
+void StackInterruptCallback(v8::Isolate* isolate, void* data) {
+  std::unique_ptr<StackInterruptPayload> payload(
+      static_cast<StackInterruptPayload*>(data));
+  if (!payload || !payload->gate) {
+    return;
+  }
+
+  // Hold the gate lock for the whole callback so Stop() cannot destroy
+  // Watchdog while we touch it.
+  std::lock_guard<std::mutex> lock(payload->gate->mutex);
+  if (!payload->gate->open || payload->gate->watchdog == nullptr) {
+    return;
+  }
+
+  payload->gate->watchdog->OnStackInterrupt(
+      isolate, payload->freeze_id, payload->generation, payload->sequence,
+      payload->max_frames);
+}
+
 }  // namespace
 
 Watchdog::Watchdog() : logger_(std::make_unique<Logger>()) {}
@@ -24,6 +44,29 @@ Watchdog::~Watchdog() { Stop(); }
 void Watchdog::SetEventCallback(EventCallback callback) {
   std::lock_guard<std::mutex> lock(on_event_mutex_);
   on_event_ = std::move(callback);
+}
+
+void Watchdog::SetIsolate(v8::Isolate* isolate) { isolate_ = isolate; }
+
+void Watchdog::DisableInterrupts() {
+  interrupt_generation_.fetch_add(1, std::memory_order_acq_rel);
+  if (interrupt_gate_) {
+    std::lock_guard<std::mutex> lock(interrupt_gate_->mutex);
+    interrupt_gate_->open = false;
+    interrupt_gate_->watchdog = nullptr;
+  }
+}
+
+bool Watchdog::ShouldCaptureOnStarted() const {
+  return config_.capture_stack &&
+         (config_.capture_stack_on == StackCaptureOn::Started ||
+          config_.capture_stack_on == StackCaptureOn::Both);
+}
+
+bool Watchdog::ShouldCaptureOnHeartbeat() const {
+  return config_.capture_stack &&
+         (config_.capture_stack_on == StackCaptureOn::Heartbeat ||
+          config_.capture_stack_on == StackCaptureOn::Both);
 }
 
 bool Watchdog::Start(const Config& config) {
@@ -38,6 +81,31 @@ bool Watchdog::Start(const Config& config) {
   // Prime CPU sampler so the first freeze event can compute a delta.
   SampleCpuPercent(&prev_wall_ms_, &prev_cpu_ms_);
   last_kick_ms_.store(NowMs(), std::memory_order_release);
+  active_freeze_id_.store(0, std::memory_order_release);
+
+  {
+    std::lock_guard<std::mutex> lock(metrics_cache_mutex_);
+    last_pid_ = 0;
+    last_rss_mb_ = 0.0;
+    last_cpu_pct_ = -1.0;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(stack_mutex_);
+    stacked_freeze_id_ = 0;
+    stacked_status_ = StackStatus::None;
+    stacked_frames_.clear();
+  }
+
+  if (config_.capture_stack && isolate_ != nullptr) {
+    interrupt_gate_ = std::make_shared<InterruptGate>();
+    std::lock_guard<std::mutex> lock(interrupt_gate_->mutex);
+    interrupt_gate_->open = true;
+    interrupt_gate_->watchdog = this;
+  } else {
+    interrupt_gate_.reset();
+  }
+
   monitor_ = std::thread([this]() { MonitorLoop(); });
   return true;
 }
@@ -46,6 +114,8 @@ void Watchdog::Stop() {
   if (!running_.exchange(false)) {
     return;
   }
+
+  DisableInterrupts();
 
   if (monitor_.joinable()) {
     monitor_.join();
@@ -60,12 +130,110 @@ void Watchdog::Kick() {
   last_kick_ms_.store(NowMs(), std::memory_order_release);
 }
 
+void Watchdog::RequestStackCapture(uint64_t freeze_id, uint32_t sequence) {
+  if (!config_.capture_stack || isolate_ == nullptr || !interrupt_gate_) {
+    return;
+  }
+
+  const uint64_t generation =
+      interrupt_generation_.load(std::memory_order_acquire);
+
+  auto* payload = new StackInterruptPayload();
+  payload->gate = interrupt_gate_;
+  payload->freeze_id = freeze_id;
+  payload->generation = generation;
+  payload->sequence = sequence;
+  payload->max_frames = config_.capture_stack_max_frames;
+
+  isolate_->RequestInterrupt(StackInterruptCallback, payload);
+}
+
+void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
+                                uint64_t generation, uint32_t sequence,
+                                uint32_t max_frames) {
+  if (generation !=
+      interrupt_generation_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (freeze_id == 0 ||
+      freeze_id != active_freeze_id_.load(std::memory_order_acquire)) {
+    return;
+  }
+  if (!running_.load(std::memory_order_acquire)) {
+    return;
+  }
+
+  std::vector<std::string> frames =
+      CaptureJsStack(isolate, static_cast<int>(max_frames));
+  if (frames.empty()) {
+    return;
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(stack_mutex_);
+    stacked_freeze_id_ = freeze_id;
+    stacked_status_ = StackStatus::Ok;
+    stacked_frames_ = frames;
+  }
+
+  const uint64_t now = NowMs();
+  const uint64_t last = last_kick_ms_.load(std::memory_order_acquire);
+  const uint64_t lag = now > last ? now - last : 0;
+
+  Event event;
+  event.type = EventType::FreezeStack;
+  event.freeze_id = freeze_id;
+  event.duration_ms = lag;
+  event.threshold_ms = config_.freeze_threshold_ms;
+  event.heartbeat_ms = config_.heartbeat_ms;
+  event.sequence = sequence;
+  event.stack_status = StackStatus::Ok;
+  event.stack_mode = "interrupt";
+  event.stack = std::move(frames);
+  Emit(event);
+}
+
+void Watchdog::AttachRecoveredStack(Event* event, uint64_t freeze_id) {
+  if (!config_.capture_stack || event == nullptr) {
+    return;
+  }
+
+  event->stack_mode = "interrupt";
+
+  std::lock_guard<std::mutex> lock(stack_mutex_);
+  if (stacked_freeze_id_ == freeze_id &&
+      stacked_status_ == StackStatus::Ok && !stacked_frames_.empty()) {
+    event->stack_status = StackStatus::Ok;
+    event->stack = stacked_frames_;
+    return;
+  }
+
+  event->stack_status = StackStatus::Unavailable;
+  event->stack.clear();
+}
+
 void Watchdog::Emit(Event event) {
-  const ProcessMetrics metrics =
-      SampleMetrics(&prev_wall_ms_, &prev_cpu_ms_);
-  event.pid = metrics.pid;
-  event.rss_mb = metrics.rss_mb;
-  event.cpu_pct = metrics.cpu_pct;
+  if (event.type == EventType::FreezeStack) {
+    // Do not call SampleMetrics here: interrupt often lands <1ms after
+    // started/heartbeat and would produce cpu_pct 0 / -1 while also
+    // poisoning the CPU sampler window for the next lifecycle event.
+    std::lock_guard<std::mutex> lock(metrics_cache_mutex_);
+    event.pid = last_pid_ != 0 ? last_pid_ : CurrentPid();
+    event.rss_mb = last_rss_mb_ > 0.0 ? last_rss_mb_ : CurrentRssMb();
+    event.cpu_pct = last_cpu_pct_;
+  } else {
+    const ProcessMetrics metrics =
+        SampleMetrics(&prev_wall_ms_, &prev_cpu_ms_);
+    event.pid = metrics.pid;
+    event.rss_mb = metrics.rss_mb;
+    event.cpu_pct = metrics.cpu_pct;
+    {
+      std::lock_guard<std::mutex> lock(metrics_cache_mutex_);
+      last_pid_ = metrics.pid;
+      last_rss_mb_ = metrics.rss_mb;
+      last_cpu_pct_ = metrics.cpu_pct;
+    }
+  }
 
   logger_->LogEvent(event);
 
@@ -94,6 +262,9 @@ void Watchdog::MonitorLoop() {
     event.threshold_ms = config_.freeze_threshold_ms;
     event.heartbeat_ms = config_.heartbeat_ms;
     event.sequence = sequence;
+    if (type == EventType::FreezeRecovered) {
+      AttachRecoveredStack(&event, freeze_id);
+    }
     Emit(event);
   };
 
@@ -108,12 +279,25 @@ void Watchdog::MonitorLoop() {
       freeze_id += 1;
       sequence = 0;
       last_heartbeat_at_ms = now;
+      active_freeze_id_.store(freeze_id, std::memory_order_release);
+      {
+        std::lock_guard<std::mutex> lock(stack_mutex_);
+        stacked_freeze_id_ = freeze_id;
+        stacked_status_ = StackStatus::Unavailable;
+        stacked_frames_.clear();
+      }
       emit(EventType::FreezeStarted, lag);
+      if (ShouldCaptureOnStarted()) {
+        RequestStackCapture(freeze_id, sequence);
+      }
     } else if (frozen && lag >= config_.freeze_threshold_ms) {
       if (now - last_heartbeat_at_ms >= config_.heartbeat_ms) {
         sequence += 1;
         last_heartbeat_at_ms = now;
         emit(EventType::FreezeHeartbeat, now - freeze_began_at_ms);
+        if (ShouldCaptureOnHeartbeat()) {
+          RequestStackCapture(freeze_id, sequence);
+        }
       }
     } else if (frozen && lag < config_.freeze_threshold_ms) {
       emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
@@ -121,6 +305,8 @@ void Watchdog::MonitorLoop() {
       freeze_began_at_ms = 0;
       last_heartbeat_at_ms = 0;
       sequence = 0;
+      active_freeze_id_.store(0, std::memory_order_release);
+      interrupt_generation_.fetch_add(1, std::memory_order_acq_rel);
     }
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -130,6 +316,7 @@ void Watchdog::MonitorLoop() {
   if (frozen) {
     const uint64_t now = NowMs();
     emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
+    active_freeze_id_.store(0, std::memory_order_release);
   }
 }
 

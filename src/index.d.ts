@@ -1,4 +1,15 @@
 declare namespace watchdog {
+  export type CaptureStackOn = "started" | "heartbeat" | "both";
+
+  export interface CaptureStackConfig {
+    /** Capture strategy. Currently only V8 RequestInterrupt. Default: "interrupt". */
+    mode?: "interrupt";
+    /** When to request a stack sample. Default: "started". */
+    on?: CaptureStackOn;
+    /** Max JS frames to capture. Default: 50. Range: 1..256. */
+    maxFrames?: number;
+  }
+
   export interface WatchdogConfig {
     /** Event-loop lag threshold that starts a freeze. Default: 1000. */
     freezeThresholdMs?: number;
@@ -8,6 +19,11 @@ declare namespace watchdog {
     logTarget?: "stderr" | "file" | "both";
     /** Log file path when logTarget is "file" or "both". */
     logFile?: string;
+    /**
+     * Opt-in JS stack capture via V8 interrupt (unstable).
+     * `true` enables defaults; `false`/omit disables.
+     */
+    captureStack?: boolean | CaptureStackConfig;
   }
 
   export type WatchdogEventName = "freeze" | "recovered" | "event";
@@ -15,7 +31,10 @@ declare namespace watchdog {
   export type WatchdogEventKind =
     | "freeze_started"
     | "freeze_heartbeat"
-    | "freeze_recovered";
+    | "freeze_recovered"
+    | "freeze_stack";
+
+  export type StackStatus = "ok" | "unavailable";
 
   export interface WatchdogEvent {
     /**
@@ -27,7 +46,7 @@ declare namespace watchdog {
     pid: number;
     /** Freeze lifecycle kind. */
     event: WatchdogEventKind;
-    /** Correlates started / heartbeat / recovered for one freeze episode. */
+    /** Correlates started / heartbeat / recovered / stack for one freeze episode. */
     freeze_id: number;
     /** Observed freeze duration in milliseconds. */
     duration_ms: number;
@@ -35,21 +54,43 @@ declare namespace watchdog {
     threshold_ms: number;
     /** Configured heartbeat interval in milliseconds. */
     heartbeat_ms: number;
-    /** Heartbeat counter within the current freeze (`0` on started). */
+    /** Heartbeat counter within the current freeze (`0` on started / started-stack). */
     sequence: number;
     /** Resident set size in megabytes at sample time. */
     rss_mb: number;
     /** Process CPU percent since previous sample; may be `-1` if unavailable. */
     cpu_pct: number;
+    /** Present when stack capture is enabled for this event. */
+    stack_status?: StackStatus;
+    /** Capture mode used for this stack sample. */
+    stack_mode?: "interrupt";
+    /** Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`. */
+    stack?: string[];
+  }
+
+  export type NormalizedCaptureStack = false | Readonly<Required<CaptureStackConfig>>;
+
+  export interface NormalizedWatchdogConfig {
+    freezeThresholdMs: number;
+    heartbeatMs: number;
+    logTarget: "stderr" | "file" | "both";
+    logFile: string;
+    captureStack: NormalizedCaptureStack;
   }
 
   export interface Watchdog {
-    readonly DEFAULTS: Readonly<Required<WatchdogConfig>>;
+    readonly DEFAULTS: Readonly<{
+      freezeThresholdMs: number;
+      heartbeatMs: number;
+      logTarget: "stderr" | "file" | "both";
+      logFile: string;
+      captureStack: false;
+    }>;
     start(config?: WatchdogConfig): boolean;
     stop(): void;
     isRunning(): boolean;
     /** Active config while running (`logFile` absolute), otherwise null. */
-    getConfig(): Readonly<Required<WatchdogConfig>> | null;
+    getConfig(): Readonly<NormalizedWatchdogConfig> | null;
     on(event: WatchdogEventName, listener: (event: WatchdogEvent) => void): Watchdog;
     once(event: WatchdogEventName, listener: (event: WatchdogEvent) => void): Watchdog;
     off(event: WatchdogEventName, listener: (event: WatchdogEvent) => void): Watchdog;

@@ -14,7 +14,7 @@ let tickTimer = null;
 let activeConfig = null;
 
 function enrich(nativeEvent) {
-  return {
+  const payload = {
     ts: new Date().toISOString(),
     pid: nativeEvent.pid || process.pid,
     event: nativeEvent.event,
@@ -26,6 +26,18 @@ function enrich(nativeEvent) {
     rss_mb: nativeEvent.rss_mb,
     cpu_pct: nativeEvent.cpu_pct,
   };
+
+  if (nativeEvent.stack_status !== undefined) {
+    payload.stack_status = nativeEvent.stack_status;
+    if (nativeEvent.stack_mode !== undefined) {
+      payload.stack_mode = nativeEvent.stack_mode;
+    }
+    if (Array.isArray(nativeEvent.stack)) {
+      payload.stack = nativeEvent.stack;
+    }
+  }
+
+  return payload;
 }
 
 function onNativeEvent(nativeEvent) {
@@ -58,6 +70,7 @@ function start(userConfig = {}) {
       heartbeatMs: config.heartbeatMs,
       logTarget: config.logTarget,
       logFile: resolvedLogFile,
+      captureStack: config.captureStack,
     },
     onNativeEvent,
   );

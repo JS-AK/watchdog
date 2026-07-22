@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include <v8.h>
+
 #include "watchdog.h"
 
 namespace {
@@ -50,6 +52,10 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
       type_name = "freeze_recovered";
       event_name = "recovered";
       break;
+    case jsak::watchdog::EventType::FreezeStack:
+      type_name = "freeze_stack";
+      event_name = "freeze";
+      break;
   }
 
   napi_value event_type;
@@ -92,6 +98,34 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
   napi_value cpu_pct;
   napi_create_double(env, event.cpu_pct, &cpu_pct);
   napi_set_named_property(env, object, "cpu_pct", cpu_pct);
+
+  if (event.stack_status != jsak::watchdog::StackStatus::None) {
+    const char* status_name =
+        event.stack_status == jsak::watchdog::StackStatus::Ok ? "ok"
+                                                             : "unavailable";
+    napi_value stack_status;
+    napi_create_string_utf8(env, status_name, NAPI_AUTO_LENGTH, &stack_status);
+    napi_set_named_property(env, object, "stack_status", stack_status);
+
+    if (!event.stack_mode.empty()) {
+      napi_value stack_mode;
+      napi_create_string_utf8(env, event.stack_mode.c_str(), NAPI_AUTO_LENGTH,
+                              &stack_mode);
+      napi_set_named_property(env, object, "stack_mode", stack_mode);
+    }
+
+    if (!event.stack.empty()) {
+      napi_value stack;
+      napi_create_array_with_length(env, event.stack.size(), &stack);
+      for (size_t i = 0; i < event.stack.size(); i += 1) {
+        napi_value frame;
+        napi_create_string_utf8(env, event.stack[i].c_str(), NAPI_AUTO_LENGTH,
+                                &frame);
+        napi_set_element(env, stack, static_cast<uint32_t>(i), frame);
+      }
+      napi_set_named_property(env, object, "stack", stack);
+    }
+  }
 
   napi_value undefined;
   napi_get_undefined(env, &undefined);
@@ -215,6 +249,46 @@ bool ReadConfig(napi_env env, napi_value object,
     }
   }
 
+  if (napi_get_named_property(env, object, "captureStack", &value) == napi_ok) {
+    bool enabled = false;
+    if (napi_get_value_bool(env, value, &enabled) == napi_ok) {
+      config->capture_stack = enabled;
+    } else {
+      napi_valuetype capture_type;
+      napi_typeof(env, value, &capture_type);
+      if (capture_type == napi_object) {
+        config->capture_stack = true;
+
+        napi_value field;
+        if (napi_get_named_property(env, value, "on", &field) == napi_ok) {
+          size_t len = 0;
+          napi_get_value_string_utf8(env, field, nullptr, 0, &len);
+          std::string on(len, '\0');
+          if (napi_get_value_string_utf8(env, field, on.data(), len + 1, &len) ==
+              napi_ok) {
+            if (on == "started") {
+              config->capture_stack_on =
+                  jsak::watchdog::StackCaptureOn::Started;
+            } else if (on == "heartbeat") {
+              config->capture_stack_on =
+                  jsak::watchdog::StackCaptureOn::Heartbeat;
+            } else if (on == "both") {
+              config->capture_stack_on = jsak::watchdog::StackCaptureOn::Both;
+            }
+          }
+        }
+
+        if (napi_get_named_property(env, value, "maxFrames", &field) ==
+            napi_ok) {
+          uint32_t n = 0;
+          if (napi_get_value_uint32(env, field, &n) == napi_ok && n > 0) {
+            config->capture_stack_max_frames = n;
+          }
+        }
+      }
+    }
+  }
+
   return true;
 }
 
@@ -258,6 +332,9 @@ napi_value Start(napi_env env, napi_callback_info info) {
           });
     }
   }
+
+  // Capture isolate on the JS thread; RequestInterrupt is issued from monitor.
+  state->watchdog->SetIsolate(v8::Isolate::GetCurrent());
 
   const bool started = state->watchdog->Start(config);
 

@@ -1,16 +1,26 @@
 "use strict";
 
+const DEFAULT_CAPTURE_STACK = Object.freeze({
+  mode: "interrupt",
+  on: "started",
+  maxFrames: 50,
+});
+
 const DEFAULTS = Object.freeze({
   freezeThresholdMs: 1000,
   heartbeatMs: 1000,
   logTarget: "stderr",
   logFile: "./watchdog.log",
+  captureStack: false,
 });
 
 const LOG_TARGETS = new Set(["stderr", "file", "both"]);
+const CAPTURE_STACK_ON = new Set(["started", "heartbeat", "both"]);
 
 const MIN_MS = 1;
 const MAX_MS = 3_600_000; // 1 hour
+const MIN_STACK_FRAMES = 1;
+const MAX_STACK_FRAMES = 256;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -43,6 +53,56 @@ function describeValue(value) {
     return "array";
   }
   return typeof value;
+}
+
+function normalizeCaptureStack(value) {
+  if (value === false || value === undefined) {
+    return false;
+  }
+
+  let options = value;
+  if (value === true) {
+    options = {};
+  } else if (!isPlainObject(value)) {
+    throw new TypeError(
+      `captureStack must be false, true, or a plain object, got ${describeValue(value)}`,
+    );
+  }
+
+  const mode = options.mode === undefined ? DEFAULT_CAPTURE_STACK.mode : options.mode;
+  if (mode !== "interrupt") {
+    throw new TypeError(
+      `captureStack.mode must be "interrupt", got ${describeValue(mode)}`,
+    );
+  }
+
+  const on = options.on === undefined ? DEFAULT_CAPTURE_STACK.on : options.on;
+  if (!CAPTURE_STACK_ON.has(on)) {
+    throw new TypeError(
+      `captureStack.on must be one of "started", "heartbeat", "both", got ${describeValue(on)}`,
+    );
+  }
+
+  const maxFrames =
+    options.maxFrames === undefined
+      ? DEFAULT_CAPTURE_STACK.maxFrames
+      : options.maxFrames;
+  if (typeof maxFrames !== "number" || !Number.isInteger(maxFrames)) {
+    throw new TypeError(
+      `captureStack.maxFrames must be an integer, got ${describeValue(maxFrames)}`,
+    );
+  }
+  if (maxFrames < MIN_STACK_FRAMES || maxFrames > MAX_STACK_FRAMES) {
+    throw new RangeError(
+      `captureStack.maxFrames must be between ${MIN_STACK_FRAMES} and ${MAX_STACK_FRAMES}, got ${maxFrames}`,
+    );
+  }
+
+  return Object.freeze({
+    mode,
+    on,
+    maxFrames,
+  });
 }
 
 function normalizeConfig(userConfig = {}) {
@@ -80,13 +140,18 @@ function normalizeConfig(userConfig = {}) {
     heartbeatMs: config.heartbeatMs,
     logTarget: config.logTarget,
     logFile: config.logFile.trim(),
+    captureStack: normalizeCaptureStack(config.captureStack),
   };
 }
 
 module.exports = {
   DEFAULTS,
+  DEFAULT_CAPTURE_STACK,
   LOG_TARGETS,
+  CAPTURE_STACK_ON,
   MIN_MS,
   MAX_MS,
+  MIN_STACK_FRAMES,
+  MAX_STACK_FRAMES,
   normalizeConfig,
 };

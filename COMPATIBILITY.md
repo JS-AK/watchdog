@@ -31,8 +31,13 @@ Notes on `ts`:
 ## Explicitly unstable / reserved
 
 - Underscored exports (`_bus`, `_addon`) are internal test hooks and may change or disappear.
-- Unknown `start(config)` keys are ignored (only the stable config keys above are applied).
-- Optional diagnostics (stack capture, etc.) will ship as separate packages or behind explicit opt-in flags.
+- Unknown `start(config)` keys are ignored (only known config keys above / below are applied).
+- Opt-in stack capture is experimental and may change shape without a major bump until marked stable:
+  - config: `captureStack` (`false` \| `true` \| `{ mode, on, maxFrames }`); default `false`;
+  - additive event value `freeze_stack` (same channels as other freeze events);
+  - payload fields: `stack_status`, `stack_mode`, `stack` (`stack` only when status is `"ok"`);
+  - uses V8 `RequestInterrupt` (JS busy-loop stacks; sync I/O / native blocks may yield `unavailable`);
+  - stack frames may include absolute file paths — treat logs as sensitive when enabled.
 
 ## Behavioral guarantees
 
@@ -41,7 +46,8 @@ Notes on `ts`:
 - `stop()` during an active freeze closes the episode with `freeze_recovered`.
 - `getConfig().logFile` is the absolute path passed to the native logger.
 - Native freeze logs are written from a monitor thread and do not require a live event loop.
-- JS event listeners run on the event loop, so during a freeze they are queued and delivered after recovery.
+- JS event listeners run on the event loop, so during a freeze they are queued and delivered after recovery
+  (except best-effort work that already ran on the isolate thread, e.g. stack capture logging).
 
 ## Breaking-change examples
 
