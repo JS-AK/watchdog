@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/JS-AK/watchdog/compare/v1.2.1...v1.2.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* guard captureStack against Node/V8 ABI mismatch ([0403c2b](https://github.com/JS-AK/watchdog/commit/0403c2baaaff5bbbed7b884b67467f63fc15282e))
+
 ## [1.2.1](https://github.com/JS-AK/watchdog/compare/v1.2.0...v1.2.1) (2026-07-22)
 
 
