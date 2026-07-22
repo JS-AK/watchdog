@@ -1,3 +1,10 @@
+# [1.1.0](https://github.com/JS-AK/watchdog/compare/v1.0.0...v1.1.0) (2026-07-22)
+
+
+### Features
+
+* add native event-loop freeze detector ([fd7cea5](https://github.com/JS-AK/watchdog/commit/fd7cea57ea220217ec71957056942d939b0dde65))
+
 # 1.0.0 (2026-07-22)
 
 
