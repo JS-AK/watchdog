@@ -117,6 +117,8 @@ class Watchdog {
   bool ShouldCaptureOnStarted() const;
   bool ShouldCaptureOnHeartbeat() const;
   void AttachRecoveredStack(Event* event, uint64_t freeze_id);
+  // Publishes a freeze_stack queued by the V8 interrupt (monitor thread only).
+  void DrainPendingStackEvent();
 
   Config config_{};
   EventCallback on_event_;
@@ -143,6 +145,12 @@ class Watchdog {
   uint64_t stacked_freeze_id_ = 0;
   StackStatus stacked_status_ = StackStatus::None;
   std::vector<std::string> stacked_frames_;
+
+  // Set on isolate thread inside RequestInterrupt; drained on monitor thread.
+  // Never call N-API / TSFN / logger from the interrupt callback.
+  std::mutex pending_stack_mutex_;
+  bool pending_stack_ready_ = false;
+  Event pending_stack_event_;
 };
 
 }  // namespace watchdog

@@ -74,7 +74,8 @@ Event classes:
 
 When `captureStack` is enabled, the monitor thread calls V8 `RequestInterrupt`.
 The interrupt callback runs on the isolate thread, captures `v8::StackTrace`,
-writes a `freeze_stack` JSON line, and stashes frames for `freeze_recovered`.
+and only stashes frames (+ queues a pending event). The monitor thread then
+writes `freeze_stack` / notifies JS — never logger or N-API from the interrupt.
 
 - Default sampling: on `freeze_started` only (`on: "started"`).
 - `"both"` / `"heartbeat"` re-sample on heartbeats.

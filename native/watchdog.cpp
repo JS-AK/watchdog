@@ -97,6 +97,12 @@ bool Watchdog::Start(const Config& config) {
     stacked_frames_.clear();
   }
 
+  {
+    std::lock_guard<std::mutex> lock(pending_stack_mutex_);
+    pending_stack_ready_ = false;
+    pending_stack_event_ = Event{};
+  }
+
   if (config_.capture_stack && isolate_ != nullptr) {
     interrupt_gate_ = std::make_shared<InterruptGate>();
     std::lock_guard<std::mutex> lock(interrupt_gate_->mutex);
@@ -163,6 +169,9 @@ void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
     return;
   }
 
+  // Keep this callback minimal: no logger, no N-API/TSFN, no metrics sample.
+  // Emitting via TSFN from a V8 interrupt re-enters Node on the isolate thread
+  // and can abort the process (seen with captureStack enabled).
   std::vector<std::string> frames =
       CaptureJsStack(isolate, static_cast<int>(max_frames));
   if (frames.empty()) {
@@ -190,6 +199,24 @@ void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
   event.stack_status = StackStatus::Ok;
   event.stack_mode = "interrupt";
   event.stack = std::move(frames);
+
+  {
+    std::lock_guard<std::mutex> lock(pending_stack_mutex_);
+    pending_stack_event_ = std::move(event);
+    pending_stack_ready_ = true;
+  }
+}
+
+void Watchdog::DrainPendingStackEvent() {
+  Event event;
+  {
+    std::lock_guard<std::mutex> lock(pending_stack_mutex_);
+    if (!pending_stack_ready_) {
+      return;
+    }
+    event = std::move(pending_stack_event_);
+    pending_stack_ready_ = false;
+  }
   Emit(event);
 }
 
@@ -269,6 +296,8 @@ void Watchdog::MonitorLoop() {
   };
 
   while (running_.load(std::memory_order_acquire)) {
+    DrainPendingStackEvent();
+
     const uint64_t now = NowMs();
     const uint64_t last = last_kick_ms_.load(std::memory_order_acquire);
     const uint64_t lag = now > last ? now - last : 0;
@@ -286,6 +315,11 @@ void Watchdog::MonitorLoop() {
         stacked_status_ = StackStatus::Unavailable;
         stacked_frames_.clear();
       }
+      {
+        std::lock_guard<std::mutex> lock(pending_stack_mutex_);
+        pending_stack_ready_ = false;
+        pending_stack_event_ = Event{};
+      }
       emit(EventType::FreezeStarted, lag);
       if (ShouldCaptureOnStarted()) {
         RequestStackCapture(freeze_id, sequence);
@@ -300,6 +334,8 @@ void Watchdog::MonitorLoop() {
         }
       }
     } else if (frozen && lag < config_.freeze_threshold_ms) {
+      // Flush any stack sample captured just before recovery.
+      DrainPendingStackEvent();
       emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
       frozen = false;
       freeze_began_at_ms = 0;
@@ -311,6 +347,8 @@ void Watchdog::MonitorLoop() {
 
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
+
+  DrainPendingStackEvent();
 
   // Close out an in-flight freeze when stop() interrupts the monitor.
   if (frozen) {
