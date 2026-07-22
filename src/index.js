@@ -62,8 +62,22 @@ function assertListener(listener) {
 }
 
 function start(userConfig = {}) {
-  const config = normalizeConfig(userConfig);
+  let config = normalizeConfig(userConfig);
   const resolvedLogFile = path.resolve(config.logFile);
+
+  // captureStack uses V8 C++ APIs; a prebuild from another Node patch can AV.
+  if (config.captureStack) {
+    const builtWith = addon.builtWithNode;
+    if (typeof builtWith === "string" && builtWith !== process.version) {
+      process.emitWarning(
+        `captureStack disabled: native addon was built for ${builtWith}, ` +
+          `but process is ${process.version}. Run: npm rebuild @js-ak/watchdog`,
+        "@js-ak/watchdog",
+      );
+      config = { ...config, captureStack: false };
+    }
+  }
+
   const started = addon.start(
     {
       freezeThresholdMs: config.freezeThresholdMs,

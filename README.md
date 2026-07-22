@@ -10,7 +10,15 @@ Native watchdog for Node.js that detects event loop freezes with near-zero overh
 npm install @js-ak/watchdog
 ```
 
-Published builds include N-API prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64`, so a C++ toolchain is **not** required for those targets.
+Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64` (Node 22 + 24). A C++ toolchain is **not** required for those targets when the prebuild matches your Node major.
+
+`captureStack` uses V8 C++ APIs and needs the addon compiled for **your exact Node version**. If the loaded `.node` was built for another patch (for example CI `v24.18.0` vs local `v24.16.0`), enablement can crash or (in newer releases) be disabled with a warning. Fix:
+
+```bash
+npm rebuild @js-ak/watchdog --build-from-source
+```
+
+Linux prebuilds are produced on Ubuntu 22.04 for broader `libstdc++` compatibility with Debian bookworm / slim images.
 
 From a git checkout (no prebuilds yet):
 
@@ -126,7 +134,9 @@ When enabled, native logs / JS events may include:
 | Log file missing | Unwritable path / missing directories | Logger fails open quietly; stderr/`both` still work; create parent dirs if you need a file |
 | High `cpu_pct` during freeze | Busy-loop / CPU-bound block | Expected for sync CPU spins; use with RSS/duration context |
 | No `freeze_stack` / `stack_status: "unavailable"` | Sync I/O, native addon, or interrupt never reached a V8 safepoint | Expected for non-JS blocks; check native logs around recovery; try `on: "both"` for retries |
-| Prebuild loads but stack capture crashes / misbehaves | Node major differs from the prebuild toolchain (V8 ABI) | `npm rebuild` on that Node version, or use the CI Node major |
+| Prebuild loads but `captureStack` crashes process | Node patch ≠ prebuild Node (V8 C++ ABI); plain `npm rebuild` may keep the prebuild | `npm rebuild @js-ak/watchdog --build-from-source` |
+| `captureStack` silently off + process warning | Addon `builtWithNode` ≠ `process.version` | Expected guard on newer releases; rebuild from source |
+| `npm ci` in Debian slim tries to compile / needs Python | Linux prebuild needs newer `libstdc++` than the image, so load fails and install falls back to `node-gyp` | Use a newer base image, install `python3 make g++`, or upgrade `@js-ak/watchdog` once Ubuntu 22.04 prebuilds are published |
 
 ## Compatibility
 
