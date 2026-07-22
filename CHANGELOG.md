@@ -1,3 +1,16 @@
+# [1.2.0](https://github.com/JS-AK/watchdog/compare/v1.1.2...v1.2.0) (2026-07-22)
+
+
+### Bug Fixes
+
+* build native addon with C++20 for Node 24 V8 ([cd495f9](https://github.com/JS-AK/watchdog/commit/cd495f91585a46564a54f050a312931574d8462b))
+
+
+### Features
+
+* add opt-in V8 interrupt stack capture ([4303762](https://github.com/JS-AK/watchdog/commit/4303762a8933eda7b61295d035eb7575fdf158a0))
+* add opt-in V8 interrupt stack capture ([0437e58](https://github.com/JS-AK/watchdog/commit/0437e58e846bcfa3093fba0a9874306768dc02f6))
+
 ## [1.1.2](https://github.com/JS-AK/watchdog/compare/v1.1.1...v1.1.2) (2026-07-22)
 
 

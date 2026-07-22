@@ -1,6 +1,6 @@
 {
   "name": "@js-ak/watchdog",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Native watchdog for Node.js that detects event loop freezes with near-zero overhead.",
   "publishConfig": {
     "access": "public",
