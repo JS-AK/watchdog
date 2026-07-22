@@ -1,3 +1,10 @@
+## [1.1.2](https://github.com/JS-AK/watchdog/compare/v1.1.1...v1.1.2) (2026-07-22)
+
+
+### Bug Fixes
+
+* harden native start/stop lifecycle ([7786ef3](https://github.com/JS-AK/watchdog/commit/7786ef3413615fa7cc5e0ff651f8cddf4af62176))
+
 ## [1.1.1](https://github.com/JS-AK/watchdog/compare/v1.1.0...v1.1.1) (2026-07-22)
 
 
