@@ -64,7 +64,7 @@ declare namespace watchdog {
     stack_status?: StackStatus;
     /** Capture mode used for this stack sample. */
     stack_mode?: "interrupt";
-    /** Captured JS frames (`at ...`), when `stack_status` is `"ok"`. */
+    /** Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`. */
     stack?: string[];
   }
 

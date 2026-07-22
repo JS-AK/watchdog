@@ -17,6 +17,7 @@ Node.js process
 | Watchdog monitor thread   |
 | Logger                    |
 | Metrics sampler           |
+| Stack capture (opt-in)    |
 +---------------------------+
 ```
 
@@ -77,7 +78,9 @@ writes a `freeze_stack` JSON line, and stashes frames for `freeze_recovered`.
 
 - Default sampling: on `freeze_started` only (`on: "started"`).
 - `"both"` / `"heartbeat"` re-sample on heartbeats.
-- Sync I/O / native blocks may never reach a safepoint → `stack_status: "unavailable"`.
+- Sync I/O / native blocks may never reach a safepoint → `stack_status: "unavailable"` (no `stack` field).
+- `freeze_stack` reuses `rss_mb` / `cpu_pct` from the latest lifecycle event so a near-zero-delta CPU sample is not emitted.
+- Implemented in-core (experimental); not a separate package.
 
 ## Freeze Detection Model
 
@@ -102,7 +105,7 @@ Suggested inputs:
 - **Watchdog monitor thread**
   - checks elapsed time;
   - controls freeze state transitions;
-  - samples RSS/CPU when emitting events;
+  - samples RSS/CPU when emitting lifecycle events;
   - may call thread-safe `Isolate::RequestInterrupt` (no HandleScope / JS from this thread).
   - stack formatting runs later on the isolate thread inside the interrupt callback.
 
@@ -114,7 +117,7 @@ Required fields:
 - `event`
 - `pid`
 - `duration_ms` (when meaningful)
-- `freeze_id` (correlate start/heartbeat/recovery)
+- `freeze_id` (correlate start/heartbeat/recovery/stack)
 
 Recommended fields:
 
@@ -123,6 +126,12 @@ Recommended fields:
 - `threshold_ms`
 - `heartbeat_ms`
 - `sequence`
+
+Optional (experimental, when `captureStack` is enabled):
+
+- `stack_status` — `"ok"` \| `"unavailable"`
+- `stack_mode` — `"interrupt"`
+- `stack` — string frames; present only when `stack_status` is `"ok"`
 
 ## Error Handling and Safety
 
@@ -134,16 +143,13 @@ Recommended fields:
 
 Main package:
 
-- `@js-ak/watchdog`
+- `@js-ak/watchdog` (core detector + optional stack capture)
 
 Binary selection:
 
-- load matching prebuild `.node` by `platform/arch` (+ N-API compatibility).
-
-Possible long-term split:
-
-- `@js-ak/watchdog` (core)
-- `@js-ak/watchdog-diagnostics` (experimental stack capture)
+- load matching prebuild `.node` by `platform/arch` (+ N-API module registration).
+- Stack capture uses V8 C++ APIs; prebuilds are produced on the release CI Node major.
+  Other Node majors may need a local `npm rebuild`.
 
 ## CI/CD
 
@@ -156,7 +162,8 @@ Current path:
 
 ## Security and Operational Notes
 
-- Do not expose sensitive process data by default.
-- Log format must be stable and parseable.
+- Do not expose sensitive process data by default (`captureStack` is off).
+- When stack capture is enabled, frames often include absolute file paths — treat logs as sensitive.
+- Log format must be stable and parseable for the stable field set; experimental stack fields may evolve.
 - File logging is append-only; rotation is left to the host (logrotate, etc.).
 - Keep diagnostics features opt-in if they increase risk or overhead.

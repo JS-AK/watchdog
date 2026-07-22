@@ -114,15 +114,17 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
       napi_set_named_property(env, object, "stack_mode", stack_mode);
     }
 
-    napi_value stack;
-    napi_create_array_with_length(env, event.stack.size(), &stack);
-    for (size_t i = 0; i < event.stack.size(); i += 1) {
-      napi_value frame;
-      napi_create_string_utf8(env, event.stack[i].c_str(), NAPI_AUTO_LENGTH,
-                              &frame);
-      napi_set_element(env, stack, static_cast<uint32_t>(i), frame);
+    if (!event.stack.empty()) {
+      napi_value stack;
+      napi_create_array_with_length(env, event.stack.size(), &stack);
+      for (size_t i = 0; i < event.stack.size(); i += 1) {
+        napi_value frame;
+        napi_create_string_utf8(env, event.stack[i].c_str(), NAPI_AUTO_LENGTH,
+                                &frame);
+        napi_set_element(env, stack, static_cast<uint32_t>(i), frame);
+      }
+      napi_set_named_property(env, object, "stack", stack);
     }
-    napi_set_named_property(env, object, "stack", stack);
   }
 
   napi_value undefined;

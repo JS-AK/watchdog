@@ -80,6 +80,8 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 
 Uses V8 `RequestInterrupt` to sample the JS stack when a freeze is detected. Works best for JS busy-loops; sync I/O / native blocks may leave `stack_status: "unavailable"`.
 
+Stack capture calls V8 C++ APIs from the N-API addon. Published prebuilds target the Node version used in release CI (currently Node 24); on other majors prefer `npm rebuild` if the prebuild misbehaves.
+
 | Value | Meaning |
 | --- | --- |
 | `false` / omit | disabled (default) |
@@ -88,8 +90,9 @@ Uses V8 `RequestInterrupt` to sample the JS stack when a freeze is detected. Wor
 
 When enabled, native logs / JS events may include:
 
-- `freeze_stack` — live sample (`channel: "freeze"`)
-- on `freeze_recovered`: `stack_status`, `stack_mode`, and last `stack` when status is `"ok"`
+- `freeze_stack` — live sample (`channel: "freeze"`); `rss_mb` / `cpu_pct` are copied from the latest lifecycle event (started/heartbeat), not re-sampled
+- on `freeze_recovered`: `stack_status`, `stack_mode`, and `stack` only when status is `"ok"`
+- frames often contain absolute paths — keep logs access-controlled when capture is on
 
 ### Event payload
 
@@ -105,10 +108,10 @@ When enabled, native logs / JS events may include:
   sequence: 0,
   rss_mb: 44.15,
   cpu_pct: 79.92, // -1 if unavailable
-  // only when captureStack is enabled:
+  // only when captureStack is enabled (on freeze_stack / freeze_recovered):
   // stack_status: "ok" | "unavailable",
   // stack_mode: "interrupt",
-  // stack: ["at busyWait (test.js:12:5)", ...],
+  // stack: ["at busyWait (test.js:12:5)", ...], // omitted when unavailable
 }
 ```
 
@@ -122,6 +125,8 @@ When enabled, native logs / JS events may include:
 | Config throws `TypeError` / `RangeError` | Invalid options | See config table; values must be plain object + ranges |
 | Log file missing | Unwritable path / missing directories | Logger fails open quietly; stderr/`both` still work; create parent dirs if you need a file |
 | High `cpu_pct` during freeze | Busy-loop / CPU-bound block | Expected for sync CPU spins; use with RSS/duration context |
+| No `freeze_stack` / `stack_status: "unavailable"` | Sync I/O, native addon, or interrupt never reached a V8 safepoint | Expected for non-JS blocks; check native logs around recovery; try `on: "both"` for retries |
+| Prebuild loads but stack capture crashes / misbehaves | Node major differs from the prebuild toolchain (V8 ABI) | `npm rebuild` on that Node version, or use the CI Node major |
 
 ## Compatibility
 

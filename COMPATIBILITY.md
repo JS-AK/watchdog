@@ -32,10 +32,12 @@ Notes on `ts`:
 
 - Underscored exports (`_bus`, `_addon`) are internal test hooks and may change or disappear.
 - Unknown `start(config)` keys are ignored (only known config keys above / below are applied).
-- Opt-in stack capture (`captureStack`, `freeze_stack`, `stack` / `stack_status` / `stack_mode`) is experimental:
-  - may change shape without a major bump until explicitly marked stable;
+- Opt-in stack capture is experimental and may change shape without a major bump until marked stable:
+  - config: `captureStack` (`false` \| `true` \| `{ mode, on, maxFrames }`); default `false`;
+  - additive event value `freeze_stack` (same channels as other freeze events);
+  - payload fields: `stack_status`, `stack_mode`, `stack` (`stack` only when status is `"ok"`);
   - uses V8 `RequestInterrupt` (JS busy-loop stacks; sync I/O / native blocks may yield `unavailable`);
-  - default remains off (`captureStack: false`).
+  - stack frames may include absolute file paths — treat logs as sensitive when enabled.
 
 ## Behavioral guarantees
 

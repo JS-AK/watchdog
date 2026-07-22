@@ -131,14 +131,16 @@ void Logger::LogEvent(const Event& event) {
     if (!event.stack_mode.empty()) {
       json << ",\"stack_mode\":\"" << EscapeJson(event.stack_mode) << '"';
     }
-    json << ",\"stack\":[";
-    for (size_t i = 0; i < event.stack.size(); i += 1) {
-      if (i > 0) {
-        json << ',';
+    if (!event.stack.empty()) {
+      json << ",\"stack\":[";
+      for (size_t i = 0; i < event.stack.size(); i += 1) {
+        if (i > 0) {
+          json << ',';
+        }
+        json << '"' << EscapeJson(event.stack[i]) << '"';
       }
-      json << '"' << EscapeJson(event.stack[i]) << '"';
+      json << ']';
     }
-    json << ']';
   }
 
   json << '}';
