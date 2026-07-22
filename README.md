@@ -10,9 +10,9 @@ Native watchdog for Node.js that detects event loop freezes with near-zero overh
 npm install @js-ak/watchdog
 ```
 
-Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64` (Node 22 + 24). A C++ toolchain is **not** required for those targets when the prebuild matches your Node major.
+Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64` (built on CI for Node 22 and Node 24). A C++ toolchain is **not** required for those targets when `node-gyp-build` finds a matching ABI prebuild.
 
-`captureStack` uses V8 C++ APIs and needs the addon compiled for **your exact Node version**. If the loaded `.node` was built for another patch (for example CI `v24.18.0` vs local `v24.16.0`), enablement can crash or (in newer releases) be disabled with a warning. Fix:
+`captureStack` uses V8 C++ APIs. Prebuilds are compiled with the real CI Node 22/24 release (not a fake `24.0.0` target). If `builtWithNode` does not equal `process.version` (for example you run an older patch), `captureStack` is disabled with a warning — run:
 
 ```bash
 npm rebuild @js-ak/watchdog --build-from-source
