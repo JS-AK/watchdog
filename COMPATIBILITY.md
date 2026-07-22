@@ -1,6 +1,6 @@
 # Compatibility Policy (v1)
 
-This document defines the stability contract for `@js-ak/watchdog` once `1.x` is released.
+This document defines the stability contract for `@js-ak/watchdog` on the `1.x` line.
 
 ## SemVer
 
@@ -8,13 +8,12 @@ This document defines the stability contract for `@js-ak/watchdog` once `1.x` is
 - **MINOR**: new optional config fields, new events, additive methods.
 - **PATCH**: bug fixes, performance, docs, internals without public contract changes.
 
-Until `1.0.0`, the package is `0.x` and the API may still change.
-
 ## Stable in v1
 
 These are covered by the compatibility promise:
 
 - Methods: `start`, `stop`, `isRunning`, `getConfig`, `on`, `once`, `off`, `removeAllListeners`
+- Export: `DEFAULTS` (frozen default config values)
 - Config keys: `freezeThresholdMs`, `heartbeatMs`, `logTarget`, `logFile`
 - Event channels: `freeze`, `recovered`, `event`
 - Event payload fields:
@@ -24,16 +23,22 @@ These are covered by the compatibility promise:
 - Native JSON Lines fields with the same names as above (`event` values:
   `freeze_started`, `freeze_heartbeat`, `freeze_recovered`)
 
+Notes on `ts`:
+
+- Native JSON Lines `ts` is the sample time on the monitor thread.
+- JS event `ts` is set when the payload is built on the event loop (after recovery for in-freeze events), so it may differ from the matching log line.
+
 ## Explicitly unstable / reserved
 
-- `logLevel` is accepted and validated, but **does not filter output in v1**.
 - Underscored exports (`_bus`, `_addon`) are internal test hooks and may change or disappear.
+- Unknown `start(config)` keys are ignored (only the stable config keys above are applied).
 - Optional diagnostics (stack capture, etc.) will ship as separate packages or behind explicit opt-in flags.
 
 ## Behavioral guarantees
 
 - `start()` is idempotent: returns `false` if already running.
 - `stop()` is idempotent and safe to call when not running.
+- `getConfig().logFile` is the absolute path passed to the native logger.
 - Native freeze logs are written from a monitor thread and do not require a live event loop.
 - JS event listeners run on the event loop, so during a freeze they are queued and delivered after recovery.
 

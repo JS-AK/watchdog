@@ -1,8 +1,8 @@
 "use strict";
 
 /**
- * Verifies that node-gyp-build can resolve a native binary
- * (from ./prebuilds or ./build) and that the addon exports the stable API.
+ * Smoke-loads the native addon via node-gyp-build.
+ * Resolves ./prebuilds when present (release), otherwise ./build (local/CI rebuild).
  */
 const path = require("node:path");
 const load = require("node-gyp-build");

@@ -3,13 +3,11 @@
 const DEFAULTS = Object.freeze({
   freezeThresholdMs: 1000,
   heartbeatMs: 1000,
-  logLevel: "info",
   logTarget: "stderr",
   logFile: "./watchdog.log",
 });
 
 const LOG_TARGETS = new Set(["stderr", "file", "both"]);
-const LOG_LEVELS = new Set(["debug", "info", "warn", "error"]);
 
 const MIN_MS = 1;
 const MAX_MS = 3_600_000; // 1 hour
@@ -71,12 +69,6 @@ function normalizeConfig(userConfig = {}) {
     );
   }
 
-  if (!LOG_LEVELS.has(config.logLevel)) {
-    throw new TypeError(
-      `logLevel must be one of "debug", "info", "warn", "error", got ${describeValue(config.logLevel)}`,
-    );
-  }
-
   if (typeof config.logFile !== "string" || config.logFile.trim().length === 0) {
     throw new TypeError(
       `logFile must be a non-empty string, got ${describeValue(config.logFile)}`,
@@ -86,7 +78,6 @@ function normalizeConfig(userConfig = {}) {
   return {
     freezeThresholdMs: config.freezeThresholdMs,
     heartbeatMs: config.heartbeatMs,
-    logLevel: config.logLevel,
     logTarget: config.logTarget,
     logFile: config.logFile.trim(),
   };
@@ -95,7 +86,6 @@ function normalizeConfig(userConfig = {}) {
 module.exports = {
   DEFAULTS,
   LOG_TARGETS,
-  LOG_LEVELS,
   MIN_MS,
   MAX_MS,
   normalizeConfig,

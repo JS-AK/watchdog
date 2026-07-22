@@ -8,13 +8,13 @@ The library is an **in-process** N-API addon loaded into the Node.js process.
 Node.js process
    │
    ├── require('@js-ak/watchdog')
+   │     └── JS kick timer (event-loop progress marker)
    │
    ▼
 +---------------------------+
 | C++ N-API addon           |
 |---------------------------|
 | Watchdog monitor thread   |
-| Event loop tick marker    |
 | Logger                    |
 | Metrics sampler           |
 +---------------------------+
@@ -23,9 +23,9 @@ Node.js process
 Lifecycle:
 
 1. App calls `watchdog.start(config)`.
-2. Addon starts monitor thread and event-loop progress marker.
-3. On freeze / heartbeat / recovery — emit logs and JS events.
-4. App calls `watchdog.stop()` (or process exits) — cleanup.
+2. JS layer starts a kick timer; addon starts the monitor thread.
+3. On freeze / heartbeat / recovery — emit native JSON logs and queue JS events.
+4. App calls `watchdog.stop()` — stop timer, join monitor thread, clear bridge.
 
 ## Core Runtime Components (v1)
 
@@ -35,6 +35,7 @@ Responsibilities:
 
 - parse and validate config;
 - expose `start()`, `stop()`, event subscriptions;
+- drive the event-loop progress marker via periodic `kick()`;
 - map native events into JS-friendly payloads.
 
 ### 2) Native Watchdog Engine (N-API)
@@ -65,7 +66,6 @@ Event classes:
 - `freeze_started`
 - `freeze_heartbeat`
 - `freeze_recovered`
-- `watchdog_error` (internal non-fatal errors)
 
 ## Freeze Detection Model
 
@@ -90,9 +90,8 @@ Suggested inputs:
 - **Watchdog monitor thread**
   - checks elapsed time;
   - controls freeze state transitions;
+  - samples RSS/CPU when emitting events;
   - never touches JS/V8 APIs directly.
-- **Optional sampler thread (or merged with monitor)**
-  - captures RSS/CPU snapshots on schedule.
 
 ## Data Model for Events
 
@@ -114,10 +113,9 @@ Recommended fields:
 
 ## Error Handling and Safety
 
-- Native internal errors should be surfaced as logs/events, not hard crashes.
-- Invalid config should fail fast at `start()`.
-- `stop()` should be idempotent.
-- Handle process exit hooks to avoid dangling threads/handles.
+- Logger I/O is best-effort (for example a missing parent directory fails open without crashing).
+- Invalid config fails fast at `start()` in the JS layer.
+- `stop()` is idempotent; the native destructor also stops the monitor thread on addon unload.
 
 ## Packaging Architecture
 
@@ -134,23 +132,18 @@ Possible long-term split:
 - `@js-ak/watchdog` (core)
 - `@js-ak/watchdog-diagnostics` (experimental stack capture)
 
-## CI/CD Architecture Direction
+## CI/CD
 
-Recommended path:
+Current path:
 
-- one release version source of truth;
-- build matrix for each target platform;
-- publish platform artifacts with matching version;
-- run smoke tests by loading addon and generating synthetic freeze.
-
-Tooling options:
-
-- semantic-release + CI orchestration,
-- or changesets for multi-package growth.
+- `master` is the release branch (semantic-release + npm publish);
+- `dev` is configured in `.releaserc.js` as an optional prerelease channel when that branch exists;
+- release workflow builds N-API prebuilds per platform/arch, then publishes one versioned package;
+- CI rebuilds the addon and runs unit/integration + smoke load tests.
 
 ## Security and Operational Notes
 
 - Do not expose sensitive process data by default.
 - Log format must be stable and parseable.
-- File logging should support rotation strategy (or integrate with external rotation).
+- File logging is append-only; rotation is left to the host (logrotate, etc.).
 - Keep diagnostics features opt-in if they increase risk or overhead.

@@ -12,7 +12,6 @@ describe("config", () => {
     assert.equal(config.freezeThresholdMs, DEFAULTS.freezeThresholdMs);
     assert.equal(config.heartbeatMs, DEFAULTS.heartbeatMs);
     assert.equal(config.logTarget, "stderr");
-    assert.equal(config.logLevel, "info");
   });
 
   it("trims logFile", () => {
@@ -35,9 +34,8 @@ describe("config", () => {
     assert.throws(() => normalizeConfig("nope"), TypeError);
   });
 
-  it("rejects invalid logTarget and logLevel", () => {
+  it("rejects invalid logTarget", () => {
     assert.throws(() => normalizeConfig({ logTarget: "memory" }), TypeError);
-    assert.throws(() => normalizeConfig({ logLevel: "trace" }), TypeError);
   });
 });
 
@@ -70,6 +68,7 @@ describe("api surface", () => {
     assert.ok(config);
     assert.equal(config.freezeThresholdMs, 500);
     assert.equal(config.heartbeatMs, 200);
+    assert.equal(config.logFile, require("node:path").resolve("./tmp-watchdog.log"));
     assert.equal(watchdog.start({ freezeThresholdMs: 500 }), false);
 
     watchdog.stop();
@@ -78,7 +77,8 @@ describe("api surface", () => {
   });
 
   it("validates event names and supports once/off", async () => {
-    assert.throws(() => watchdog.on("nope", () => {}), TypeError);
+    assert.throws(() => watchdog.on("nope", () => { }), TypeError);
+    assert.throws(() => watchdog.on("error", () => { }), TypeError);
     assert.throws(() => watchdog.on("freeze", null), TypeError);
 
     let hits = 0;

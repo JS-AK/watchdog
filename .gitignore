@@ -107,3 +107,6 @@ dist
 
 # Cursor
 .cursor/
+
+# VS Code
+.vscode/
