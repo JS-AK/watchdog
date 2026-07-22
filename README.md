@@ -1,1 +1,1 @@
-# watchdog
+# @js-ak/watchdog

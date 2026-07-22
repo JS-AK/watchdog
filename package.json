@@ -1,25 +1,32 @@
 {
   "name": "@js-ak/watchdog",
   "version": "0.0.1",
-  "description": "watchdog",
+  "description": "Native watchdog for Node.js that detects event loop freezes with near-zero overhead.",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "main": "index.js",
+  "main": "src/index.js",
+  "types": "src/index.d.ts",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.js"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/JS-AK/watchdog.git"
   },
   "keywords": [
-    "automatic deploy",
-    "deploy",
-    "deploy to npm",
-    "deploy with @",
-    "deploy with scope"
+    "nodejs",
+    "event-loop",
+    "watchdog",
+    "freeze",
+    "monitoring",
+    "napi"
   ],
   "author": "JS-AK",
   "license": "MIT",
@@ -28,7 +35,7 @@
   },
   "homepage": "https://github.com/JS-AK/watchdog#readme",
   "engines": {
-    "node": "^22.22.2 || >=24.15.0"
+    "node": ">=20"
   },
   "devDependencies": {
     "@semantic-release/changelog": "7.0.0",
