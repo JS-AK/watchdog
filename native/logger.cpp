@@ -19,8 +19,22 @@ const char* EventName(EventType type) {
       return "freeze_heartbeat";
     case EventType::FreezeRecovered:
       return "freeze_recovered";
+    case EventType::FreezeStack:
+      return "freeze_stack";
   }
   return "unknown";
+}
+
+const char* StackStatusName(StackStatus status) {
+  switch (status) {
+    case StackStatus::Ok:
+      return "ok";
+    case StackStatus::Unavailable:
+      return "unavailable";
+    case StackStatus::None:
+      return nullptr;
+  }
+  return nullptr;
 }
 
 std::string Iso8601Now() {
@@ -109,7 +123,25 @@ void Logger::LogEvent(const Event& event) {
        << "\"cpu_pct\":" << event.cpu_pct << ','
        << "\"threshold_ms\":" << event.threshold_ms << ','
        << "\"heartbeat_ms\":" << event.heartbeat_ms << ','
-       << "\"sequence\":" << event.sequence << '}';
+       << "\"sequence\":" << event.sequence;
+
+  const char* stack_status = StackStatusName(event.stack_status);
+  if (stack_status != nullptr) {
+    json << ",\"stack_status\":\"" << stack_status << '"';
+    if (!event.stack_mode.empty()) {
+      json << ",\"stack_mode\":\"" << EscapeJson(event.stack_mode) << '"';
+    }
+    json << ",\"stack\":[";
+    for (size_t i = 0; i < event.stack.size(); i += 1) {
+      if (i > 0) {
+        json << ',';
+      }
+      json << '"' << EscapeJson(event.stack[i]) << '"';
+    }
+    json << ']';
+  }
+
+  json << '}';
 
   std::lock_guard<std::mutex> lock(mutex_);
   WriteLine(json.str());

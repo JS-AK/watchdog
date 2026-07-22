@@ -74,6 +74,22 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 | `heartbeatMs` | `1000` | `1..3600000` |
 | `logTarget` | `"stderr"` | `"stderr"` \| `"file"` \| `"both"` |
 | `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
+| `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames }` — see below |
+
+### `captureStack` (experimental)
+
+Uses V8 `RequestInterrupt` to sample the JS stack when a freeze is detected. Works best for JS busy-loops; sync I/O / native blocks may leave `stack_status: "unavailable"`.
+
+| Value | Meaning |
+| --- | --- |
+| `false` / omit | disabled (default) |
+| `true` | `{ mode: "interrupt", on: "started", maxFrames: 50 }` |
+| `{ mode, on, maxFrames }` | `mode`: `"interrupt"` only; `on`: `"started"` \| `"heartbeat"` \| `"both"`; `maxFrames`: `1..256` |
+
+When enabled, native logs / JS events may include:
+
+- `freeze_stack` — live sample (`channel: "freeze"`)
+- on `freeze_recovered`: `stack_status`, `stack_mode`, and last `stack` when status is `"ok"`
 
 ### Event payload
 
@@ -81,7 +97,7 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 {
   ts: "2026-07-22T13:18:38.696Z", // JS delivery time; native log lines use sample time
   pid: 28440,
-  event: "freeze_started", // freeze_started | freeze_heartbeat | freeze_recovered
+  event: "freeze_started", // freeze_started | freeze_heartbeat | freeze_recovered | freeze_stack
   freeze_id: 1,
   duration_ms: 170,
   threshold_ms: 1000,
@@ -89,6 +105,10 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
   sequence: 0,
   rss_mb: 44.15,
   cpu_pct: 79.92, // -1 if unavailable
+  // only when captureStack is enabled:
+  // stack_status: "ok" | "unavailable",
+  // stack_mode: "interrupt",
+  // stack: ["at busyWait (test.js:12:5)", ...],
 }
 ```
 

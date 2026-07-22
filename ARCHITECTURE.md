@@ -49,7 +49,8 @@ Responsibilities:
 
 Design principles:
 
-- no V8 operations from watchdog thread;
+- no HandleScope / JS execution from the watchdog monitor thread;
+- `RequestInterrupt` from the monitor is allowed (thread-safe); stack walk runs on the isolate thread;
 - thread-safe state via atomics/minimal locking;
 - deterministic start/stop lifecycle.
 
@@ -66,6 +67,17 @@ Event classes:
 - `freeze_started`
 - `freeze_heartbeat`
 - `freeze_recovered`
+- `freeze_stack` (optional; when `captureStack` is enabled)
+
+### 4) Stack capture (opt-in)
+
+When `captureStack` is enabled, the monitor thread calls V8 `RequestInterrupt`.
+The interrupt callback runs on the isolate thread, captures `v8::StackTrace`,
+writes a `freeze_stack` JSON line, and stashes frames for `freeze_recovered`.
+
+- Default sampling: on `freeze_started` only (`on: "started"`).
+- `"both"` / `"heartbeat"` re-sample on heartbeats.
+- Sync I/O / native blocks may never reach a safepoint → `stack_status: "unavailable"`.
 
 ## Freeze Detection Model
 
@@ -91,7 +103,8 @@ Suggested inputs:
   - checks elapsed time;
   - controls freeze state transitions;
   - samples RSS/CPU when emitting events;
-  - never touches JS/V8 APIs directly.
+  - may call thread-safe `Isolate::RequestInterrupt` (no HandleScope / JS from this thread).
+  - stack formatting runs later on the isolate thread inside the interrupt callback.
 
 ## Data Model for Events
 
