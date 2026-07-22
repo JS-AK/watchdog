@@ -48,8 +48,8 @@ describe("freeze detection", () => {
 
     assert.equal(
       watchdog.start({
-        freezeThresholdMs: 150,
-        heartbeatMs: 100,
+        freezeThresholdMs: 120,
+        heartbeatMs: 80,
         logTarget: "file",
         logFile,
       }),
@@ -58,7 +58,10 @@ describe("freeze detection", () => {
 
     // Let the tick timer settle.
     await sleep(80);
-    busyWait(450);
+    // Keep blocked long enough for: threshold → ≥1 heartbeat → recover.
+    // Heartbeat is armed at freeze_started, so the post-start window must
+    // exceed heartbeatMs even if the monitor wakes late (20ms poll).
+    busyWait(700);
     // Allow queued native->JS callbacks and recovery kick to land.
     await sleep(300);
 
@@ -77,8 +80,8 @@ describe("freeze detection", () => {
     const recovered = events.find((e) => e.event === "freeze_recovered");
 
     assert.equal(started.pid, process.pid);
-    assert.ok(started.duration_ms >= 150);
-    assert.ok(recovered.duration_ms >= 400);
+    assert.ok(started.duration_ms >= 120);
+    assert.ok(recovered.duration_ms >= 500);
     assert.equal(started.freeze_id, recovered.freeze_id);
     assert.equal(typeof started.rss_mb, "number");
     assert.ok(started.rss_mb > 0);
