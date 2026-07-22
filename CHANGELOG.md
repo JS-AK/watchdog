@@ -1,3 +1,10 @@
+## [1.1.1](https://github.com/JS-AK/watchdog/compare/v1.1.0...v1.1.1) (2026-07-22)
+
+
+### Bug Fixes
+
+* align v1 contract with implementation ([6b4d429](https://github.com/JS-AK/watchdog/commit/6b4d4297caea35378fd7e82c7be6886cdb1c578d))
+
 # [1.1.0](https://github.com/JS-AK/watchdog/compare/v1.0.0...v1.1.0) (2026-07-22)
 
 
