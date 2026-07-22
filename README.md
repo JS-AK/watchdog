@@ -10,13 +10,9 @@ Native watchdog for Node.js that detects event loop freezes with near-zero overh
 npm install @js-ak/watchdog
 ```
 
-Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64` (built on CI for Node 22 and Node 24). A C++ toolchain is **not** required for those targets when `node-gyp-build` finds a matching ABI prebuild.
+Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `linux-arm64`, `darwin-arm64`, and `darwin-x64` (Node 22 / 24 / 26). `npm install` loads the matching ABI — no C++ toolchain needed on those targets.
 
-`captureStack` uses V8 C++ APIs. Prebuilds are compiled with the real CI Node 22/24 release (not a fake `24.0.0` target). If `builtWithNode` does not equal `process.version` (for example you run an older patch), `captureStack` is disabled with a warning — run:
-
-```bash
-npm rebuild @js-ak/watchdog --build-from-source
-```
+`captureStack` needs a matching `NODE_MODULE_VERSION` prebuild (same rule Node uses for native addons). All patches within a shipped major share one ABI; an unsupported major disables capture with a warning until that ABI is published.
 
 Linux prebuilds are produced on Ubuntu 22.04 for broader `libstdc++` compatibility with Debian bookworm / slim images.
 
@@ -88,7 +84,7 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 
 Uses V8 `RequestInterrupt` to sample the JS stack when a freeze is detected. Works best for JS busy-loops; sync I/O / native blocks may leave `stack_status: "unavailable"`.
 
-Stack capture calls V8 C++ APIs from the N-API addon. Published prebuilds target the Node version used in release CI (currently Node 24); on other majors prefer `npm rebuild` if the prebuild misbehaves.
+Stack capture calls V8 C++ APIs. Release CI ships one ABI-tagged binary per supported Node major; `node-gyp-build` picks the match at install/load time.
 
 | Value | Meaning |
 | --- | --- |
@@ -134,9 +130,8 @@ When enabled, native logs / JS events may include:
 | Log file missing | Unwritable path / missing directories | Logger fails open quietly; stderr/`both` still work; create parent dirs if you need a file |
 | High `cpu_pct` during freeze | Busy-loop / CPU-bound block | Expected for sync CPU spins; use with RSS/duration context |
 | No `freeze_stack` / `stack_status: "unavailable"` | Sync I/O, native addon, or interrupt never reached a V8 safepoint | Expected for non-JS blocks; check native logs around recovery; try `on: "both"` for retries |
-| Prebuild loads but `captureStack` crashes process | Node patch ≠ prebuild Node (V8 C++ ABI); plain `npm rebuild` may keep the prebuild | `npm rebuild @js-ak/watchdog --build-from-source` |
-| `captureStack` silently off + process warning | Addon `builtWithNode` ≠ `process.version` | Expected guard on newer releases; rebuild from source |
-| `npm ci` in Debian slim tries to compile / needs Python | Linux prebuild needs newer `libstdc++` than the image, so load fails and install falls back to `node-gyp` | Use a newer base image, install `python3 make g++`, or upgrade `@js-ak/watchdog` once Ubuntu 22.04 prebuilds are published |
+| `captureStack` off + ABI warning | No prebuild for this Node major / wrong binary loaded | Use Node 22/24/26, or upgrade `@js-ak/watchdog` once that ABI is published |
+| `npm ci` in Debian slim tries to compile / needs Python | Linux prebuild needs newer `libstdc++` than the image, so load fails and install falls back to `node-gyp` | Use a newer base image, or upgrade `@js-ak/watchdog` (Ubuntu 22.04 prebuilds) |
 
 ## Compatibility
 

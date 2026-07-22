@@ -397,11 +397,11 @@ napi_value Init(napi_env env, napi_value exports) {
 
   napi_define_properties(env, exports, sizeof(props) / sizeof(props[0]), props);
 
-  // Exact Node version this .node was compiled against (V8 C++ ABI sensitive).
-  napi_value built_with_node;
-  napi_create_string_utf8(env, NODE_VERSION, NAPI_AUTO_LENGTH,
-                          &built_with_node);
-  napi_set_named_property(env, exports, "builtWithNode", built_with_node);
+  // NODE_MODULE_VERSION of the headers this .node was compiled against.
+  napi_value built_with_modules;
+  napi_create_uint32(env, NODE_MODULE_VERSION, &built_with_modules);
+  napi_set_named_property(env, exports, "builtWithModules",
+                          built_with_modules);
 
   return exports;
 }

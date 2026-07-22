@@ -148,8 +148,8 @@ Main package:
 
 Binary selection:
 
-- load matching prebuild `.node` by `platform/arch` (+ N-API module registration).
-- Stack capture uses V8 C++ APIs; prebuilds are produced on the release CI Node major.
+- load matching ABI-tagged prebuild `.node` by `platform/arch` + `NODE_MODULE_VERSION`.
+- Stack capture uses V8 C++ APIs; release CI ships one ABI binary per supported Node major.
   Other Node majors may need a local `npm rebuild`.
 
 ## CI/CD
@@ -158,7 +158,7 @@ Current path:
 
 - `master` is the release branch (semantic-release + npm publish);
 - `dev` is configured in `.releaserc.js` as an optional prerelease channel when that branch exists;
-- release workflow builds N-API prebuilds per platform/arch, then publishes one versioned package;
+- release workflow builds ABI-tagged prebuilds per platform/arch × Node major, then publishes one versioned package;
 - CI rebuilds the addon and runs unit/integration + smoke load tests.
 
 ## Security and Operational Notes

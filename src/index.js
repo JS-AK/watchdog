@@ -65,13 +65,17 @@ function start(userConfig = {}) {
   let config = normalizeConfig(userConfig);
   const resolvedLogFile = path.resolve(config.logFile);
 
-  // captureStack uses V8 C++ APIs; a prebuild from another Node patch can AV.
+  // captureStack uses V8 C++ APIs. Published packages ship ABI-tagged
+  // prebuilds; node-gyp-build should load a matching one. Mismatch means
+  // this Node major has no shipped prebuild yet (or a wrong binary loaded).
   if (config.captureStack) {
-    const builtWith = addon.builtWithNode;
-    if (typeof builtWith === "string" && builtWith !== process.version) {
+    const builtAbi = addon.builtWithModules;
+    const runtimeAbi = Number(process.versions.modules);
+    if (typeof builtAbi === "number" && builtAbi !== runtimeAbi) {
       process.emitWarning(
-        `captureStack disabled: native addon was built for ${builtWith}, ` +
-          `but process is ${process.version}. Run: npm rebuild @js-ak/watchdog`,
+        `captureStack disabled: no matching ABI prebuild ` +
+          `(addon ${builtAbi}, runtime ${runtimeAbi} / Node ${process.version}). ` +
+          `Use a supported Node major or upgrade @js-ak/watchdog.`,
         "@js-ak/watchdog",
       );
       config = { ...config, captureStack: false };
