@@ -38,6 +38,7 @@ Notes on `ts`:
 
 - `start()` is idempotent: returns `false` if already running.
 - `stop()` is idempotent and safe to call when not running.
+- `stop()` during an active freeze closes the episode with `freeze_recovered`.
 - `getConfig().logFile` is the absolute path passed to the native logger.
 - Native freeze logs are written from a monitor thread and do not require a live event loop.
 - JS event listeners run on the event loop, so during a freeze they are queued and delivered after recovery.

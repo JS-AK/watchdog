@@ -162,6 +162,55 @@ describe("hardening: failure modes", () => {
     assert.equal(fs.existsSync(badPath), false);
   });
 
+  it("emits freeze_recovered when stopped during a freeze", async () => {
+    const logFile = path.join(
+      os.tmpdir(),
+      `watchdog-stop-freeze-${process.pid}-${Date.now()}.log`,
+    );
+    const events = [];
+    const onEvent = (event) => events.push(event);
+    watchdog.on("event", onEvent);
+
+    assert.equal(
+      watchdog.start({
+        freezeThresholdMs: 100,
+        heartbeatMs: 80,
+        logTarget: "file",
+        logFile,
+      }),
+      true,
+    );
+
+    await sleep(40);
+    busyWait(280);
+    watchdog.stop();
+    // Allow released TSFN callbacks to drain onto the event loop.
+    await sleep(80);
+
+    watchdog.off("event", onEvent);
+
+    const types = events.map((event) => event.event);
+    assert.ok(types.includes("freeze_started"), `missing started: ${types}`);
+    assert.ok(
+      types.includes("freeze_recovered"),
+      `missing recovered on stop: ${types}`,
+    );
+
+    const lines = fs
+      .readFileSync(logFile, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    assert.ok(lines.some((event) => event.event === "freeze_recovered"));
+
+    try {
+      fs.unlinkSync(logFile);
+    } catch {
+      // ignore
+    }
+  });
+
   it("keeps process alive after invalid start config", () => {
     assert.throws(
       () =>
