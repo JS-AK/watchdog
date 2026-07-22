@@ -45,7 +45,7 @@
   },
   "homepage": "https://github.com/JS-AK/watchdog#readme",
   "engines": {
-    "node": ">=20.17.0"
+    "node": ">=22"
   },
   "gypfile": true,
   "dependencies": {
