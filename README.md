@@ -59,8 +59,8 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 | `start(config?)` | Start monitoring. Returns `false` if already running. |
 | `stop()` | Stop monitoring (idempotent). |
 | `isRunning()` | Whether the native monitor thread is active. |
-| `getConfig()` | Active config object, or `null` when stopped. |
-| `on(event, listener)` | Subscribe (`freeze`, `recovered`, `event`, `error`). |
+| `getConfig()` | Active config (`logFile` absolute), or `null` when stopped. |
+| `on(event, listener)` | Subscribe (`freeze`, `recovered`, `event`). |
 | `once(event, listener)` | One-shot subscription. |
 | `off(event, listener)` | Unsubscribe. |
 | `removeAllListeners(event?)` | Clear listeners. |
@@ -73,14 +73,13 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 | `freezeThresholdMs` | `1000` | `1..3600000` |
 | `heartbeatMs` | `1000` | `1..3600000` |
 | `logTarget` | `"stderr"` | `"stderr"` \| `"file"` \| `"both"` |
-| `logFile` | `"./watchdog.log"` | used when target is `file`/`both` |
-| `logLevel` | `"info"` | reserved; unused for filtering in v1 |
+| `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
 
 ### Event payload
 
 ```js
 {
-  ts: "2026-07-22T13:18:38.696Z",
+  ts: "2026-07-22T13:18:38.696Z", // JS delivery time; native log lines use sample time
   pid: 28440,
   event: "freeze_started", // freeze_started | freeze_heartbeat | freeze_recovered
   freeze_id: 1,

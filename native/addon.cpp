@@ -61,19 +61,14 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
   napi_create_string_utf8(env, event_name, NAPI_AUTO_LENGTH, &channel);
   napi_set_named_property(env, object, "channel", channel);
 
+  // Number fields match the public JS/JSON contract (safe for typical freeze durations).
   napi_value freeze_id;
-  napi_create_bigint_uint64(env, event.freeze_id, &freeze_id);
-  napi_set_named_property(env, object, "freezeId", freeze_id);
+  napi_create_double(env, static_cast<double>(event.freeze_id), &freeze_id);
+  napi_set_named_property(env, object, "freeze_id", freeze_id);
 
   napi_value duration_ms;
-  napi_create_bigint_uint64(env, event.duration_ms, &duration_ms);
-  napi_set_named_property(env, object, "durationMs", duration_ms);
-
-  // Also provide Number fields for convenience (safe for typical freeze durations).
-  napi_value duration_number;
-  napi_create_double(env, static_cast<double>(event.duration_ms),
-                     &duration_number);
-  napi_set_named_property(env, object, "duration_ms", duration_number);
+  napi_create_double(env, static_cast<double>(event.duration_ms), &duration_ms);
+  napi_set_named_property(env, object, "duration_ms", duration_ms);
 
   napi_value threshold_ms;
   napi_create_uint32(env, event.threshold_ms, &threshold_ms);
@@ -86,11 +81,6 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
   napi_value sequence;
   napi_create_uint32(env, event.sequence, &sequence);
   napi_set_named_property(env, object, "sequence", sequence);
-
-  napi_value freeze_id_number;
-  napi_create_double(env, static_cast<double>(event.freeze_id),
-                     &freeze_id_number);
-  napi_set_named_property(env, object, "freeze_id", freeze_id_number);
 
   napi_value pid;
   napi_create_uint32(env, event.pid, &pid);

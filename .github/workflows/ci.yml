@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master, dev]
   pull_request:
 
 jobs:
@@ -37,5 +35,5 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Smoke load
+      - name: Smoke load addon
         run: npm run smoke:prebuild

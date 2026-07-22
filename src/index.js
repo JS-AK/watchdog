@@ -5,7 +5,7 @@ const loadAddon = require("node-gyp-build");
 const path = require("node:path");
 const { normalizeConfig, DEFAULTS } = require("./config");
 
-const EVENT_NAMES = new Set(["freeze", "recovered", "event", "error"]);
+const EVENT_NAMES = new Set(["freeze", "recovered", "event"]);
 
 const addon = loadAddon(path.join(__dirname, ".."));
 const bus = new EventEmitter();
@@ -51,12 +51,13 @@ function assertListener(listener) {
 
 function start(userConfig = {}) {
   const config = normalizeConfig(userConfig);
+  const resolvedLogFile = path.resolve(config.logFile);
   const started = addon.start(
     {
       freezeThresholdMs: config.freezeThresholdMs,
       heartbeatMs: config.heartbeatMs,
       logTarget: config.logTarget,
-      logFile: path.resolve(config.logFile),
+      logFile: resolvedLogFile,
     },
     onNativeEvent,
   );
@@ -65,7 +66,7 @@ function start(userConfig = {}) {
     return false;
   }
 
-  activeConfig = Object.freeze({ ...config });
+  activeConfig = Object.freeze({ ...config, logFile: resolvedLogFile });
 
   if (tickTimer) {
     clearInterval(tickTimer);

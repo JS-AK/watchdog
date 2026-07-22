@@ -4,18 +4,13 @@ declare namespace watchdog {
     freezeThresholdMs?: number;
     /** Interval between freeze heartbeat events while frozen. Default: 1000. */
     heartbeatMs?: number;
-    /**
-     * Reserved for future log filtering.
-     * In v1 all freeze events are always written.
-     */
-    logLevel?: "debug" | "info" | "warn" | "error";
     /** Where native JSON Lines are written. Default: "stderr". */
     logTarget?: "stderr" | "file" | "both";
     /** Log file path when logTarget is "file" or "both". */
     logFile?: string;
   }
 
-  export type WatchdogEventName = "freeze" | "recovered" | "event" | "error";
+  export type WatchdogEventName = "freeze" | "recovered" | "event";
 
   export type WatchdogEventKind =
     | "freeze_started"
@@ -23,7 +18,10 @@ declare namespace watchdog {
     | "freeze_recovered";
 
   export interface WatchdogEvent {
-    /** ISO-8601 UTC timestamp when the JS payload was built. */
+    /**
+     * ISO-8601 UTC timestamp when the JS payload was built on the event loop.
+     * Native JSON Lines use sample time and may differ for the same freeze.
+     */
     ts: string;
     /** Process id that emitted the event. */
     pid: number;
@@ -50,7 +48,7 @@ declare namespace watchdog {
     start(config?: WatchdogConfig): boolean;
     stop(): void;
     isRunning(): boolean;
-    /** Active config while running, otherwise null. */
+    /** Active config while running (`logFile` absolute), otherwise null. */
     getConfig(): Readonly<Required<WatchdogConfig>> | null;
     on(event: WatchdogEventName, listener: (event: WatchdogEvent) => void): Watchdog;
     once(event: WatchdogEventName, listener: (event: WatchdogEvent) => void): Watchdog;
