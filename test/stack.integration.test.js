@@ -28,12 +28,13 @@ describe("captureStack config", () => {
   it("expands true to interrupt defaults", () => {
     assert.deepEqual(normalizeConfig({ captureStack: true }).captureStack, {
       mode: "interrupt",
-      on: "started",
+      on: "both",
       maxFrames: 50,
+      maxSamples: 8,
     });
   });
 
-  it("rejects unknown mode / on / maxFrames", () => {
+  it("rejects unknown mode / on / maxFrames / maxSamples", () => {
     assert.throws(
       () => normalizeConfig({ captureStack: { mode: "report" } }),
       TypeError,
@@ -46,6 +47,31 @@ describe("captureStack config", () => {
       () => normalizeConfig({ captureStack: { maxFrames: 0 } }),
       RangeError,
     );
+    assert.throws(
+      () => normalizeConfig({ captureStack: { maxSamples: 0 } }),
+      RangeError,
+    );
+    assert.throws(
+      () => normalizeConfig({ captureStack: { maxSamples: 33 } }),
+      RangeError,
+    );
+    assert.throws(
+      () => normalizeConfig({ captureStack: { maxSamples: 1.5 } }),
+      TypeError,
+    );
+  });
+
+  it("accepts maxSamples in range", () => {
+    assert.equal(
+      normalizeConfig({ captureStack: { maxSamples: 1 } }).captureStack
+        .maxSamples,
+      1,
+    );
+    assert.equal(
+      normalizeConfig({ captureStack: { maxSamples: 32 } }).captureStack
+        .maxSamples,
+      32,
+    );
   });
 });
 
@@ -54,7 +80,7 @@ describe("captureStack interrupt", () => {
     os.tmpdir(),
     `watchdog-stack-${process.pid}-${Date.now()}.log`,
   );
-
+ 
   before(() => {
     watchdog.stop();
     watchdog.removeAllListeners();
@@ -117,6 +143,10 @@ describe("captureStack interrupt", () => {
     assert.ok(Array.isArray(recovered.stack));
     assert.ok(recovered.stack.length > 0);
     assert.equal(recovered.freeze_id, stackEvent.freeze_id);
+    assert.ok(Array.isArray(recovered.stack_samples));
+    assert.ok(recovered.stack_samples.length >= 1);
+    assert.equal(recovered.stack_samples[0].count >= 1, true);
+    assert.deepEqual(recovered.stack, recovered.stack_samples[0].stack);
 
     const lines = fs
       .readFileSync(logFile, "utf8")
@@ -131,5 +161,62 @@ describe("captureStack interrupt", () => {
     assert.ok(recoveredLine);
     assert.equal(recoveredLine.stack_status, "ok");
     assert.ok(Array.isArray(recoveredLine.stack));
+    assert.ok(Array.isArray(recoveredLine.stack_samples));
+    assert.ok(recoveredLine.stack_samples.length >= 1);
+  });
+
+  it("aggregates multiple interrupt samples on long freeze", async () => {
+    const events = [];
+    const onEvent = (event) => events.push(event);
+    watchdog.on("event", onEvent);
+
+    assert.equal(
+      watchdog.start({
+        freezeThresholdMs: 80,
+        heartbeatMs: 50,
+        logTarget: "file",
+        logFile,
+        captureStack: { on: "both", maxSamples: 8 },
+      }),
+      true,
+    );
+
+    await sleep(40);
+    busyWait(450);
+    await sleep(350);
+
+    watchdog.off("event", onEvent);
+    watchdog.stop();
+
+    const freezeStacks = events.filter(
+      (event) => event.event === "freeze_stack",
+    );
+    assert.ok(
+      freezeStacks.length >= 2,
+      `expected multiple freeze_stack, got ${freezeStacks.length}`,
+    );
+
+    const recovered = events.find((event) => event.event === "freeze_recovered");
+    assert.ok(recovered);
+    assert.equal(recovered.stack_status, "ok");
+    assert.ok(Array.isArray(recovered.stack_samples));
+    assert.ok(recovered.stack_samples.length >= 1);
+
+    const totalCount = recovered.stack_samples.reduce(
+      (sum, sample) => sum + sample.count,
+      0,
+    );
+    assert.ok(
+      totalCount >= 2,
+      `expected aggregated count >= 2, got ${totalCount}: ${JSON.stringify(recovered.stack_samples)}`,
+    );
+    assert.deepEqual(recovered.stack, recovered.stack_samples[0].stack);
+
+    for (let i = 1; i < recovered.stack_samples.length; i += 1) {
+      assert.ok(
+        recovered.stack_samples[i - 1].count >=
+          recovered.stack_samples[i].count,
+      );
+    }
   });
 });

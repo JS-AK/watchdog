@@ -1,5 +1,6 @@
 #include "watchdog.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include "logger.h"
@@ -92,6 +93,8 @@ bool Watchdog::Start(const Config& config) {
   config_ = config;
   config_.capture_stack_max_frames =
       ClampStackFrames(config_.capture_stack_max_frames);
+  config_.capture_stack_max_samples =
+      ClampStackSamples(config_.capture_stack_max_samples);
   logger_->Configure(LoggerConfig{config_.log_target, config_.log_file,
                                   config_.log_max_bytes});
   prev_wall_ms_ = 0;
@@ -110,9 +113,7 @@ bool Watchdog::Start(const Config& config) {
 
   {
     std::lock_guard<std::mutex> lock(stack_mutex_);
-    stacked_freeze_id_ = 0;
-    stacked_status_ = StackStatus::None;
-    stacked_frames_.clear();
+    ClearStackAggregationLocked();
   }
 
   {
@@ -198,9 +199,7 @@ void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
 
   {
     std::lock_guard<std::mutex> lock(stack_mutex_);
-    stacked_freeze_id_ = freeze_id;
-    stacked_status_ = StackStatus::Ok;
-    stacked_frames_ = frames;
+    RecordStackSampleLocked(freeze_id, frames);
   }
 
   const uint64_t now = NowMs();
@@ -225,6 +224,39 @@ void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
   }
 }
 
+void Watchdog::ClearStackAggregationLocked() {
+  stacked_freeze_id_ = 0;
+  stacked_status_ = StackStatus::None;
+  stacked_frames_.clear();
+  stacked_samples_.clear();
+}
+
+void Watchdog::RecordStackSampleLocked(
+    uint64_t freeze_id, const std::vector<std::string>& frames) {
+  stacked_freeze_id_ = freeze_id;
+  stacked_status_ = StackStatus::Ok;
+  stacked_frames_ = frames;
+
+  for (StackSample& sample : stacked_samples_) {
+    if (sample.stack == frames) {
+      sample.count += 1;
+      return;
+    }
+  }
+
+  const uint32_t max_samples =
+      ClampStackSamples(config_.capture_stack_max_samples);
+  if (stacked_samples_.size() >= static_cast<size_t>(max_samples)) {
+    // Cap unique keys: keep counting known stacks, ignore new shapes.
+    return;
+  }
+
+  StackSample sample;
+  sample.count = 1;
+  sample.stack = frames;
+  stacked_samples_.push_back(std::move(sample));
+}
+
 void Watchdog::DrainPendingStackEvent() {
   Event event;
   {
@@ -247,14 +279,23 @@ void Watchdog::AttachRecoveredStack(Event* event, uint64_t freeze_id) {
 
   std::lock_guard<std::mutex> lock(stack_mutex_);
   if (stacked_freeze_id_ == freeze_id &&
-      stacked_status_ == StackStatus::Ok && !stacked_frames_.empty()) {
+      stacked_status_ == StackStatus::Ok && !stacked_samples_.empty()) {
+    std::vector<StackSample> samples = stacked_samples_;
+    std::stable_sort(
+        samples.begin(), samples.end(),
+        [](const StackSample& a, const StackSample& b) {
+          return a.count > b.count;
+        });
+
     event->stack_status = StackStatus::Ok;
-    event->stack = stacked_frames_;
+    event->stack = samples.front().stack;
+    event->stack_samples = std::move(samples);
     return;
   }
 
   event->stack_status = StackStatus::Unavailable;
   event->stack.clear();
+  event->stack_samples.clear();
 }
 
 void Watchdog::Emit(Event event) {
@@ -338,9 +379,9 @@ void Watchdog::MonitorLoop() {
       active_freeze_id_.store(freeze_id, std::memory_order_release);
       {
         std::lock_guard<std::mutex> lock(stack_mutex_);
+        ClearStackAggregationLocked();
         stacked_freeze_id_ = freeze_id;
         stacked_status_ = StackStatus::Unavailable;
-        stacked_frames_.clear();
       }
       {
         std::lock_guard<std::mutex> lock(pending_stack_mutex_);

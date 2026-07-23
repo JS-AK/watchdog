@@ -4,10 +4,15 @@ declare namespace watchdog {
   export interface CaptureStackConfig {
     /** Capture strategy. Currently only V8 RequestInterrupt. Default: "interrupt". */
     mode?: "interrupt";
-    /** When to request a stack sample. Default: "started". */
+    /** When to request a stack sample. Default: "both". */
     on?: CaptureStackOn;
     /** Max JS frames to capture. Default: 50. Range: 1..256. */
     maxFrames?: number;
+    /**
+     * Max unique stack shapes retained per freeze for aggregation on recovered.
+     * Default: 8. Range: 1..32.
+     */
+    maxSamples?: number;
   }
 
   export interface WatchdogConfig {
@@ -50,6 +55,13 @@ declare namespace watchdog {
 
   export type StackStatus = "ok" | "unavailable";
 
+  export interface StackSample {
+    /** How many interrupt samples matched this stack shape during the freeze. */
+    count: number;
+    /** Captured JS frames (`at ...`). */
+    stack: string[];
+  }
+
   export interface WatchdogEvent {
     /**
      * ISO-8601 UTC timestamp when the JS payload was built on the event loop.
@@ -82,8 +94,16 @@ declare namespace watchdog {
     stack_status?: StackStatus;
     /** Capture mode used for this stack sample. */
     stack_mode?: "interrupt";
-    /** Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`. */
+    /**
+     * Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`.
+     * On `freeze_recovered`, the most frequent sample across the freeze.
+     */
     stack?: string[];
+    /**
+     * Unique stacks sampled during the freeze, sorted by `count` descending.
+     * Present on `freeze_recovered` when at least one sample succeeded.
+     */
+    stack_samples?: StackSample[];
   }
 
   export type NormalizedCaptureStack = false | Readonly<Required<CaptureStackConfig>>;
