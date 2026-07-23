@@ -42,13 +42,16 @@ struct Config {
   // Optional app/service label; empty means omit `source` from payloads.
   std::string source;
   bool capture_stack = false;
-  StackCaptureOn capture_stack_on = StackCaptureOn::Started;
+  StackCaptureOn capture_stack_on = StackCaptureOn::Both;
   uint32_t capture_stack_max_frames = 50;
+  uint32_t capture_stack_max_samples = 8;
 };
 
 // Matches JS normalizeConfig / CaptureStackConfig range.
 inline constexpr uint32_t kMinStackFrames = 1;
 inline constexpr uint32_t kMaxStackFrames = 256;
+inline constexpr uint32_t kMinStackSamples = 1;
+inline constexpr uint32_t kMaxStackSamples = 32;
 
 inline uint32_t ClampStackFrames(uint32_t frames) {
   if (frames < kMinStackFrames) {
@@ -58,6 +61,16 @@ inline uint32_t ClampStackFrames(uint32_t frames) {
     return kMaxStackFrames;
   }
   return frames;
+}
+
+inline uint32_t ClampStackSamples(uint32_t samples) {
+  if (samples < kMinStackSamples) {
+    return kMinStackSamples;
+  }
+  if (samples > kMaxStackSamples) {
+    return kMaxStackSamples;
+  }
+  return samples;
 }
 
 enum class EventType : uint8_t {
@@ -71,6 +84,11 @@ enum class StackStatus : uint8_t {
   None = 0,
   Ok = 1,
   Unavailable = 2,
+};
+
+struct StackSample {
+  uint32_t count = 0;
+  std::vector<std::string> stack;
 };
 
 struct Event {
@@ -88,6 +106,8 @@ struct Event {
   StackStatus stack_status = StackStatus::None;
   std::string stack_mode;
   std::vector<std::string> stack;
+  // Aggregated unique stacks for this freeze (recovered only); empty otherwise.
+  std::vector<StackSample> stack_samples;
 };
 
 using EventCallback = std::function<void(const Event&)>;
@@ -145,6 +165,11 @@ class Watchdog {
   void AttachRecoveredStack(Event* event, uint64_t freeze_id);
   // Publishes a freeze_stack queued by the V8 interrupt (monitor thread only).
   void DrainPendingStackEvent();
+  // Insert/increment a unique stack sample for the active freeze (caller holds
+  // stack_mutex_). Caps unique entries at capture_stack_max_samples.
+  void RecordStackSampleLocked(uint64_t freeze_id,
+                               const std::vector<std::string>& frames);
+  void ClearStackAggregationLocked();
 
   Config config_{};
   EventCallback on_event_;
@@ -171,6 +196,7 @@ class Watchdog {
   uint64_t stacked_freeze_id_ = 0;
   StackStatus stacked_status_ = StackStatus::None;
   std::vector<std::string> stacked_frames_;
+  std::vector<StackSample> stacked_samples_;
 
   // Set on isolate thread inside RequestInterrupt; drained on monitor thread.
   // Never call N-API / TSFN / logger from the interrupt callback.

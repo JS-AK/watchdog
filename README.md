@@ -94,7 +94,7 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs (inclu
 | `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
 | `logMaxBytes` | `10485760` (10 MiB) | soft size cap for the active log file; on overflow rename to `<logFile>.1` (one backup) and reopen; `0` disables; `0..1073741824` |
 | `source` | omit | optional app/service label (max 256 chars); included on native JSON Lines and JS events when set. Library identity is always `lib: "js-ak/watchdog"` |
-| `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames }` — see below |
+| `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames, maxSamples }` — see below |
 
 Local demo of size rotation (repo checkout only; not shipped in the npm tarball):
 
@@ -106,18 +106,22 @@ node examples/log-max-bytes.js
 
 Uses V8 `RequestInterrupt` to sample the JS stack when a freeze is detected. Works best for JS busy-loops; sync I/O / native blocks may leave `stack_status: "unavailable"`.
 
+Under heavy parallel async work, a single sample often lands in `processTicksAndRejections` only — that does **not** identify which of many concurrent handlers blocked the loop. Prefer `on: "both"` (the `true` default) so longer freezes re-sample on heartbeat; on `freeze_recovered`, `stack` is the **most frequent** shape and `stack_samples` lists unique stacks with counts. Nearby request-completion logs are weak attribution under concurrency.
+
 Stack capture calls V8 C++ APIs. Release CI ships one ABI-tagged binary per supported Node major; `node-gyp-build` picks the match at install/load time.
+
+A future experimental CPU-profile mode (V8 `CpuProfiler` over the freeze window) is planned for stronger attribution; not available yet.
 
 | Value | Meaning |
 | --- | --- |
 | `false` / omit | disabled (default) |
-| `true` | `{ mode: "interrupt", on: "started", maxFrames: 50 }` |
-| `{ mode, on, maxFrames }` | `mode`: `"interrupt"` only; `on`: `"started"` \| `"heartbeat"` \| `"both"`; `maxFrames`: `1..256` |
+| `true` | `{ mode: "interrupt", on: "both", maxFrames: 50, maxSamples: 8 }` |
+| `{ mode, on, maxFrames, maxSamples }` | `mode`: `"interrupt"` only; `on`: `"started"` \| `"heartbeat"` \| `"both"`; `maxFrames`: `1..256`; `maxSamples`: `1..32` unique shapes retained per freeze |
 
 When enabled, native logs / JS events may include:
 
 - `freeze_stack` — live sample (`channel: "freeze"`); `rss_mb` / `cpu_pct` are copied from the latest lifecycle event (started/heartbeat), not re-sampled
-- on `freeze_recovered`: `stack_status`, `stack_mode`, and `stack` only when status is `"ok"`
+- on `freeze_recovered`: `stack_status`, `stack_mode`, and `stack` only when status is `"ok"`; `stack_samples` (`[{ count, stack }, ...]`, count-desc) when at least one sample succeeded
 - frames often contain absolute paths — keep logs access-controlled when capture is on
 
 ### Event payload
@@ -141,6 +145,8 @@ When enabled, native logs / JS events may include:
   // stack_status: "ok" | "unavailable",
   // stack_mode: "interrupt",
   // stack: ["at busyWait (test.js:12:5)", ...], // omitted when unavailable
+  // on freeze_recovered when samples exist:
+  // stack_samples: [{ count: 3, stack: ["at busyWait ..."] }, ...],
 }
 ```
 
@@ -155,6 +161,7 @@ When enabled, native logs / JS events may include:
 | Log file missing | Unwritable path / missing directories | Logger fails open quietly; stderr/`both` still work; create parent dirs if you need a file |
 | High `cpu_pct` during freeze | Busy-loop / CPU-bound block | Expected for sync CPU spins; use with RSS/duration context |
 | No `freeze_stack` / `stack_status: "unavailable"` | Sync I/O, native addon, or interrupt never reached a V8 safepoint | Expected for non-JS blocks; check native logs around recovery; try `on: "both"` for retries |
+| `stack_status: "ok"` but only `processTicksAndRejections` / `task_queues` | Interrupt landed in the promise microtask runner under async load | Expected for many concurrent awaits; use `stack_samples` + duration/RSS/CPU; do not trust nearby API method logs for attribution; raise `freezeThresholdMs` if short stalls are noise |
 | `captureStack` off + ABI warning | No prebuild for this Node major / wrong binary loaded | Use Node 22/24/26, or upgrade `@js-ak/watchdog` once that ABI is published |
 | `npm ci` in Debian slim tries to compile / needs Python | Linux prebuild needs newer `libstdc++` than the image, so load fails and install falls back to `node-gyp` | Use a newer base image, or upgrade `@js-ak/watchdog` (Ubuntu 22.04 prebuilds) |
 | Container exit **139** / SIGSEGV (often with `captureStack`) on Alpine | glibc Linux prebuild loaded on musl | Use a release with libc-tagged + musl prebuilds; or switch to a glibc image (`node:*-bookworm-slim`); or rebuild from source on Alpine after removing `node_modules/@js-ak/watchdog/prebuilds` |

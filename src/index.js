@@ -40,6 +40,9 @@ function enrich(nativeEvent) {
     if (Array.isArray(nativeEvent.stack)) {
       payload.stack = nativeEvent.stack;
     }
+    if (Array.isArray(nativeEvent.stack_samples)) {
+      payload.stack_samples = nativeEvent.stack_samples;
+    }
   }
 
   return payload;

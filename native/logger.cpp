@@ -234,6 +234,24 @@ void Logger::LogEvent(const Event& event) {
       }
       json << ']';
     }
+    if (!event.stack_samples.empty()) {
+      json << ",\"stack_samples\":[";
+      for (size_t i = 0; i < event.stack_samples.size(); i += 1) {
+        if (i > 0) {
+          json << ',';
+        }
+        const StackSample& sample = event.stack_samples[i];
+        json << "{\"count\":" << sample.count << ",\"stack\":[";
+        for (size_t j = 0; j < sample.stack.size(); j += 1) {
+          if (j > 0) {
+            json << ',';
+          }
+          json << '"' << EscapeJson(sample.stack[j]) << '"';
+        }
+        json << "]}";
+      }
+      json << ']';
+    }
   }
 
   json << '}';
