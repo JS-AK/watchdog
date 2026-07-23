@@ -3,7 +3,6 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
-#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -60,13 +59,19 @@ std::string Iso8601Now() {
 std::string EscapeJson(const std::string& input) {
   std::string out;
   out.reserve(input.size() + 8);
-  for (char ch : input) {
+  for (unsigned char ch : input) {
     switch (ch) {
       case '\\':
         out += "\\\\";
         break;
       case '"':
         out += "\\\"";
+        break;
+      case '\b':
+        out += "\\b";
+        break;
+      case '\f':
+        out += "\\f";
         break;
       case '\n':
         out += "\\n";
@@ -78,7 +83,14 @@ std::string EscapeJson(const std::string& input) {
         out += "\\t";
         break;
       default:
-        out += ch;
+        if (ch < 0x20) {
+          constexpr char kHex[] = "0123456789abcdef";
+          out += "\\u00";
+          out += kHex[(ch >> 4) & 0x0f];
+          out += kHex[ch & 0x0f];
+        } else {
+          out += static_cast<char>(ch);
+        }
         break;
     }
   }
@@ -87,7 +99,41 @@ std::string EscapeJson(const std::string& input) {
 
 }  // namespace
 
-void Logger::Configure(const LoggerConfig& config) { config_ = config; }
+Logger::~Logger() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  CloseFile();
+}
+
+void Logger::CloseFile() {
+  if (file_.is_open()) {
+    file_.flush();
+    file_.close();
+  }
+}
+
+void Logger::EnsureFileOpen() {
+  const bool want_file =
+      config_.target == LogTarget::File || config_.target == LogTarget::Both;
+  if (!want_file) {
+    CloseFile();
+    return;
+  }
+  if (file_.is_open()) {
+    return;
+  }
+  file_.open(config_.file_path, std::ios::out | std::ios::app);
+}
+
+void Logger::Configure(const LoggerConfig& config) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const bool path_changed = config.file_path != config_.file_path;
+  const bool target_changed = config.target != config_.target;
+  config_ = config;
+  if (path_changed || target_changed || !file_.is_open()) {
+    CloseFile();
+  }
+  EnsureFileOpen();
+}
 
 void Logger::WriteLine(const std::string& line) {
   const bool to_stderr = config_.target == LogTarget::Stderr ||
@@ -102,10 +148,10 @@ void Logger::WriteLine(const std::string& line) {
   }
 
   if (to_file) {
-    std::ofstream out(config_.file_path, std::ios::out | std::ios::app);
-    if (out) {
-      out << line << '\n';
-      out.flush();
+    EnsureFileOpen();
+    if (file_) {
+      file_ << line << '\n';
+      file_.flush();
     }
   }
 }

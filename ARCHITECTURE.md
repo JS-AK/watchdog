@@ -25,7 +25,8 @@ Lifecycle:
 
 1. App calls `watchdog.start(config)`.
 2. JS layer starts a kick timer; addon starts the monitor thread.
-3. On freeze / heartbeat / recovery — emit native JSON logs and queue JS events.
+3. On freeze / recovery — emit native JSON logs and queue JS events.
+   Heartbeats are written to native logs only (not bridged to JS).
 4. App calls `watchdog.stop()` — stop timer, join monitor thread, clear bridge.
 
 ## Core Runtime Components (v1)
@@ -66,7 +67,7 @@ Responsibilities:
 Event classes:
 
 - `freeze_started`
-- `freeze_heartbeat`
+- `freeze_heartbeat` (native JSON Lines only; not delivered to JS)
 - `freeze_recovered`
 - `freeze_stack` (optional; when `captureStack` is enabled)
 
@@ -89,7 +90,7 @@ Conceptual state machine:
 
 - **Healthy**: heartbeat/tick observed in expected window.
 - **Frozen**: threshold exceeded; emit `freeze_started` once.
-- **Frozen+Heartbeat**: emit periodic `freeze_heartbeat`.
+- **Frozen+Heartbeat**: emit periodic `freeze_heartbeat` to native logs (JS bridge skipped).
 - **Recovered**: event loop responds again; emit `freeze_recovered` with duration.
 
 Suggested inputs:

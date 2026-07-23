@@ -174,9 +174,12 @@ napi_status EnsureTsfn(napi_env env, AddonState* state, napi_value js_callback) 
   napi_value resource_object;
   napi_create_object(env, &resource_object);
 
+  // Bounded queue: while the event loop is frozen callbacks cannot drain.
+  // Heartbeats are not bridged; this caps started/stack/recovered bursts.
+  constexpr size_t kTsfnMaxQueue = 32;
   const napi_status status = napi_create_threadsafe_function(
-      env, js_callback, resource_object, async_resource_name, 0, 1, nullptr,
-      nullptr, nullptr, CallJs, &state->tsfn);
+      env, js_callback, resource_object, async_resource_name, kTsfnMaxQueue, 1,
+      nullptr, nullptr, nullptr, CallJs, &state->tsfn);
   if (status != napi_ok) {
     return status;
   }
@@ -283,7 +286,8 @@ bool ReadConfig(napi_env env, napi_value object,
             napi_ok) {
           uint32_t n = 0;
           if (napi_get_value_uint32(env, field, &n) == napi_ok && n > 0) {
-            config->capture_stack_max_frames = n;
+            config->capture_stack_max_frames =
+                jsak::watchdog::ClampStackFrames(n);
           }
         }
       }

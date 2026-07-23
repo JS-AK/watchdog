@@ -22,6 +22,8 @@ These are covered by the compatibility promise:
   - `rss_mb`, `cpu_pct`
 - Native JSON Lines fields with the same names as above (`event` values:
   `freeze_started`, `freeze_heartbeat`, `freeze_recovered`)
+- JS event bridge does **not** emit `freeze_heartbeat` (native logs only); this avoids
+  unbounded TSFN growth while the event loop cannot drain callbacks.
 
 Notes on `ts`:
 

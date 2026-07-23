@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -40,6 +41,20 @@ struct Config {
   uint32_t capture_stack_max_frames = 50;
 };
 
+// Matches JS normalizeConfig / CaptureStackConfig range.
+inline constexpr uint32_t kMinStackFrames = 1;
+inline constexpr uint32_t kMaxStackFrames = 256;
+
+inline uint32_t ClampStackFrames(uint32_t frames) {
+  if (frames < kMinStackFrames) {
+    return kMinStackFrames;
+  }
+  if (frames > kMaxStackFrames) {
+    return kMaxStackFrames;
+  }
+  return frames;
+}
+
 enum class EventType : uint8_t {
   FreezeStarted = 1,
   FreezeHeartbeat = 2,
@@ -74,8 +89,12 @@ class Watchdog;
 
 struct InterruptGate {
   std::mutex mutex;
+  std::condition_variable cv;
   bool open = false;
   Watchdog* watchdog = nullptr;
+  // Active StackInterruptCallback bodies that may touch Watchdog without
+  // holding mutex (after the open/watchdog check). Stop waits for zero.
+  int in_flight = 0;
 };
 
 struct StackInterruptPayload {
