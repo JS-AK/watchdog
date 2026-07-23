@@ -92,6 +92,7 @@ function start(userConfig = {}) {
     heartbeatMs: config.heartbeatMs,
     logTarget: config.logTarget,
     logFile: resolvedLogFile,
+    logMaxBytes: config.logMaxBytes,
     captureStack: config.captureStack,
   };
   if (config.source !== undefined) {

@@ -63,7 +63,9 @@ Responsibilities:
 - JSON Lines output;
 - sinks: `stderr`, `file`, or `both`;
 - best-effort writes with fallback behavior;
-- every line includes fixed `lib: "js-ak/watchdog"`; optional `source` from config.
+- every line includes fixed `lib: "js-ak/watchdog"`; optional `source` from config;
+- file handle stays open; heartbeats skip file `flush` (stderr always `fflush`);
+- optional size cap (`logMaxBytes`): rotate to `<logFile>.1` (one backup) then reopen.
 
 Event classes:
 
@@ -168,5 +170,6 @@ Current path:
 - Do not expose sensitive process data by default (`captureStack` is off).
 - When stack capture is enabled, frames often include absolute file paths — treat logs as sensitive.
 - Log format must be stable and parseable for the stable field set; experimental stack fields may evolve.
-- File logging is append-only; rotation is left to the host (logrotate, etc.).
+- File logging is append-only with an optional in-process size cap (`logMaxBytes`,
+  one `<logFile>.1` backup). Host logrotate remains supported.
 - Keep diagnostics features opt-in if they increase risk or overhead.

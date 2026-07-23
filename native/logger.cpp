@@ -106,9 +106,11 @@ Logger::~Logger() {
 
 void Logger::CloseFile() {
   if (file_.is_open()) {
+    // Always flush on close so buffered heartbeats land before rename/stop.
     file_.flush();
     file_.close();
   }
+  file_bytes_ = 0;
 }
 
 void Logger::EnsureFileOpen() {
@@ -122,6 +124,35 @@ void Logger::EnsureFileOpen() {
     return;
   }
   file_.open(config_.file_path, std::ios::out | std::ios::app);
+  if (!file_) {
+    file_bytes_ = 0;
+    return;
+  }
+  // Append mode: measure current size so rotation accounts for prior content.
+  file_.seekp(0, std::ios::end);
+  const auto pos = file_.tellp();
+  file_bytes_ = pos < 0 ? 0 : static_cast<uint64_t>(pos);
+}
+
+void Logger::MaybeRotateBeforeWrite(uint64_t upcoming_bytes) {
+  // Disabled, no handle, or empty file: nothing to rotate. A single oversized
+  // line on an empty file is written as-is (cannot usefully split it).
+  if (config_.max_bytes == 0 || !file_.is_open() || file_bytes_ == 0) {
+    return;
+  }
+  if (file_bytes_ + upcoming_bytes <= config_.max_bytes) {
+    return;
+  }
+
+  CloseFile();
+
+  // One backup only: `<logFile>.1`. Drop any previous backup, then promote
+  // the active file. Failures are ignored (best-effort logging).
+  const std::string backup_path = config_.file_path + ".1";
+  std::remove(backup_path.c_str());
+  std::rename(config_.file_path.c_str(), backup_path.c_str());
+
+  EnsureFileOpen();
 }
 
 void Logger::Configure(const LoggerConfig& config) {
@@ -135,13 +166,15 @@ void Logger::Configure(const LoggerConfig& config) {
   EnsureFileOpen();
 }
 
-void Logger::WriteLine(const std::string& line) {
+void Logger::WriteLine(const std::string& line, bool flush_file) {
   const bool to_stderr = config_.target == LogTarget::Stderr ||
                          config_.target == LogTarget::Both;
   const bool to_file =
       config_.target == LogTarget::File || config_.target == LogTarget::Both;
 
   if (to_stderr) {
+    // stderr stays line-synced: operators watching the console see heartbeats
+    // immediately even when the file sink buffers them.
     std::fputs(line.c_str(), stderr);
     std::fputc('\n', stderr);
     std::fflush(stderr);
@@ -150,8 +183,17 @@ void Logger::WriteLine(const std::string& line) {
   if (to_file) {
     EnsureFileOpen();
     if (file_) {
+      // +1 for the trailing newline we append below.
+      const uint64_t upcoming = static_cast<uint64_t>(line.size()) + 1ull;
+      MaybeRotateBeforeWrite(upcoming);
+      if (!file_) {
+        return;
+      }
       file_ << line << '\n';
-      file_.flush();
+      file_bytes_ += upcoming;
+      if (flush_file) {
+        file_.flush();
+      }
     }
   }
 }
@@ -196,8 +238,13 @@ void Logger::LogEvent(const Event& event) {
 
   json << '}';
 
+  // Heartbeats are frequent during a long freeze; skip file flush so the
+  // monitor thread is not stalled on disk I/O under mutex_. Lifecycle events
+  // (started / recovered / stack) still flush so those lines are durable.
+  const bool flush_file = event.type != EventType::FreezeHeartbeat;
+
   std::lock_guard<std::mutex> lock(mutex_);
-  WriteLine(json.str());
+  WriteLine(json.str(), flush_file);
 }
 
 }  // namespace watchdog

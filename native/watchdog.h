@@ -36,6 +36,9 @@ struct Config {
   uint32_t heartbeat_ms = 1000;
   LogTarget log_target = LogTarget::Stderr;
   std::string log_file = "./watchdog.log";
+  // Soft cap for the active log file; 0 disables in-process rotation.
+  // Default matches JS DEFAULTS (10 MiB) + one `<logFile>.1` backup.
+  uint64_t log_max_bytes = 10ull * 1024ull * 1024ull;
   // Optional app/service label; empty means omit `source` from payloads.
   std::string source;
   bool capture_stack = false;

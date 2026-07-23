@@ -20,6 +20,13 @@ declare namespace watchdog {
     /** Log file path when logTarget is "file" or "both". */
     logFile?: string;
     /**
+     * Soft size cap (bytes) for the active log file. Default: 10 MiB.
+     * When a write would exceed the cap, the file is renamed to `<logFile>.1`
+     * (one backup) and a new file is opened. `0` disables in-process rotation.
+     * Range: 0..1073741824 (1 GiB). Host logrotate remains fine.
+     */
+    logMaxBytes?: number;
+    /**
      * Optional app/service label for monitoring (not library identity).
      * When set, included as `source` on native JSON Lines and JS events.
      * Max length: 256. Library identity is always `lib: "js-ak/watchdog"`.
@@ -86,6 +93,7 @@ declare namespace watchdog {
     heartbeatMs: number;
     logTarget: "stderr" | "file" | "both";
     logFile: string;
+    logMaxBytes: number;
     /** Present only when `start({ source })` was set. */
     source?: string;
     captureStack: NormalizedCaptureStack;
@@ -97,6 +105,7 @@ declare namespace watchdog {
       heartbeatMs: number;
       logTarget: "stderr" | "file" | "both";
       logFile: string;
+      logMaxBytes: number;
       captureStack: false;
     }>;
     start(config?: WatchdogConfig): boolean;

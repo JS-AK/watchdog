@@ -36,10 +36,12 @@ describe("native logging", () => {
 
   after(() => {
     watchdog.stop();
-    try {
-      fs.unlinkSync(logFile);
-    } catch {
-      // ignore
+    for (const file of [logFile, `${logFile}.1`]) {
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // ignore
+      }
     }
   });
 
@@ -88,5 +90,54 @@ describe("native logging", () => {
 
     const recovered = events.find((e) => e.event === "freeze_recovered");
     assert.ok(recovered.duration_ms >= 400);
+  });
+
+  it("rotates to <logFile>.1 when logMaxBytes is exceeded", async () => {
+    const backup = `${logFile}.1`;
+    for (const file of [logFile, backup]) {
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        // ignore
+      }
+    }
+
+    assert.equal(
+      watchdog.start({
+        freezeThresholdMs: 80,
+        heartbeatMs: 40,
+        logTarget: "file",
+        logFile,
+        // Tiny cap so a few heartbeat lines force rotation.
+        logMaxBytes: 400,
+      }),
+      true,
+    );
+
+    await sleep(60);
+    // Long freeze → many native heartbeats → file grows past the soft cap.
+    busyWait(500);
+    await sleep(250);
+    watchdog.stop();
+
+    assert.ok(fs.existsSync(backup), "expected rotated backup <logFile>.1");
+    assert.ok(fs.existsSync(logFile), "expected active log after rotation");
+
+    const activeSize = fs.statSync(logFile).size;
+    const backupSize = fs.statSync(backup).size;
+    assert.ok(backupSize > 0, "backup should contain prior lines");
+    assert.ok(
+      activeSize <= 400 || activeSize < backupSize,
+      `active log should be capped after rotate, got active=${activeSize} backup=${backupSize}`,
+    );
+
+    const activeLines = fs
+      .readFileSync(logFile, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of activeLines) {
+      JSON.parse(line);
+    }
   });
 });
