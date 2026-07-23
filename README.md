@@ -31,7 +31,7 @@ Requires a C++ toolchain (`node-gyp` / Visual Studio Build Tools on Windows).
 const watchdog = require("@js-ak/watchdog");
 
 watchdog.on("freeze", (event) => {
-  // freeze_started | freeze_heartbeat
+  // freeze_started | freeze_stack (heartbeat is native-log only)
   console.log(event.event, event.duration_ms);
 });
 
@@ -54,7 +54,7 @@ if (!started) {
 watchdog.stop();
 ```
 
-Native side writes JSON Lines **from the monitor thread**, so freeze logs appear even while the event loop is blocked. JS callbacks are still queued until recovery.
+Native side writes JSON Lines **from the monitor thread**, so freeze logs (including `freeze_heartbeat`) appear even while the event loop is blocked. JS only receives `freeze_started` / `freeze_stack` / `freeze_recovered` (queued until the loop can run again).
 
 ## API
 
@@ -75,7 +75,7 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs appear
 | Key | Default | Notes |
 | --- | --- | --- |
 | `freezeThresholdMs` | `1000` | `1..3600000` |
-| `heartbeatMs` | `1000` | `1..3600000` |
+| `heartbeatMs` | `1000` | `1..3600000`; native log cadence while frozen (not bridged to JS) |
 | `logTarget` | `"stderr"` | `"stderr"` \| `"file"` \| `"both"` |
 | `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
 | `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames }` — see below |
@@ -104,7 +104,8 @@ When enabled, native logs / JS events may include:
 {
   ts: "2026-07-22T13:18:38.696Z", // JS delivery time; native log lines use sample time
   pid: 28440,
-  event: "freeze_started", // freeze_started | freeze_heartbeat | freeze_recovered | freeze_stack
+  event: "freeze_started", // JS: freeze_started | freeze_recovered | freeze_stack
+                           // native logs also include freeze_heartbeat
   freeze_id: 1,
   duration_ms: 170,
   threshold_ms: 1000,

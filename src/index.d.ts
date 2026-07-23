@@ -13,7 +13,7 @@ declare namespace watchdog {
   export interface WatchdogConfig {
     /** Event-loop lag threshold that starts a freeze. Default: 1000. */
     freezeThresholdMs?: number;
-    /** Interval between freeze heartbeat events while frozen. Default: 1000. */
+    /** Interval for native freeze_heartbeat logs while frozen (not emitted to JS). Default: 1000. */
     heartbeatMs?: number;
     /** Where native JSON Lines are written. Default: "stderr". */
     logTarget?: "stderr" | "file" | "both";
@@ -30,9 +30,10 @@ declare namespace watchdog {
 
   export type WatchdogEventKind =
     | "freeze_started"
-    | "freeze_heartbeat"
     | "freeze_recovered"
     | "freeze_stack";
+  /** Present in native JSON Lines only; not delivered on JS event channels. */
+  export type WatchdogNativeLogKind = WatchdogEventKind | "freeze_heartbeat";
 
   export type StackStatus = "ok" | "unavailable";
 

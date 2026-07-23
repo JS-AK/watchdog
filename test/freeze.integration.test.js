@@ -40,7 +40,7 @@ describe("freeze detection", () => {
     }
   });
 
-  it("emits freeze_started, heartbeat and freeze_recovered", async () => {
+  it("emits freeze_started and freeze_recovered; heartbeat stays in logs", async () => {
     const events = [];
     const onEvent = (event) => events.push(event);
 
@@ -58,7 +58,7 @@ describe("freeze detection", () => {
 
     // Let the tick timer settle.
     await sleep(80);
-    // Keep blocked long enough for: threshold → ≥1 heartbeat → recover.
+    // Keep blocked long enough for: threshold → ≥1 native heartbeat → recover.
     // Heartbeat is armed at freeze_started, so the post-start window must
     // exceed heartbeatMs even if the monitor wakes late (20ms poll).
     busyWait(700);
@@ -72,8 +72,20 @@ describe("freeze detection", () => {
     assert.ok(types.includes("freeze_started"), `missing started: ${types}`);
     assert.ok(types.includes("freeze_recovered"), `missing recovered: ${types}`);
     assert.ok(
-      types.includes("freeze_heartbeat"),
-      `missing heartbeat: ${types}`,
+      !types.includes("freeze_heartbeat"),
+      `heartbeat must not bridge to JS: ${types}`,
+    );
+
+    const logLines = fs
+      .readFileSync(logFile, "utf8")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const logTypes = logLines.map((e) => e.event);
+    assert.ok(
+      logTypes.includes("freeze_heartbeat"),
+      `missing native heartbeat log: ${logTypes}`,
     );
 
     const started = events.find((e) => e.event === "freeze_started");

@@ -5,6 +5,8 @@
 
 #include <v8.h>
 
+#include "watchdog.h"
+
 namespace jsak {
 namespace watchdog {
 
@@ -13,6 +15,9 @@ inline std::vector<std::string> CaptureJsStack(v8::Isolate* isolate,
   std::vector<std::string> frames;
   if (isolate == nullptr || max_frames <= 0) {
     return frames;
+  }
+  if (max_frames > static_cast<int>(kMaxStackFrames)) {
+    max_frames = static_cast<int>(kMaxStackFrames);
   }
 
   v8::HandleScope handle_scope(isolate);

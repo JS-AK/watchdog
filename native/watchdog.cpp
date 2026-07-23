@@ -23,16 +23,27 @@ void StackInterruptCallback(v8::Isolate* isolate, void* data) {
     return;
   }
 
-  // Hold the gate lock for the whole callback so Stop() cannot destroy
-  // Watchdog while we touch it.
-  std::lock_guard<std::mutex> lock(payload->gate->mutex);
-  if (!payload->gate->open || payload->gate->watchdog == nullptr) {
-    return;
+  const std::shared_ptr<InterruptGate> gate = payload->gate;
+  Watchdog* watchdog = nullptr;
+  {
+    // Pin Watchdog via in_flight so Stop()/DisableInterrupts waits before
+    // nulling watchdog — CaptureJsStack must not run under gate->mutex.
+    std::lock_guard<std::mutex> lock(gate->mutex);
+    if (!gate->open || gate->watchdog == nullptr) {
+      return;
+    }
+    watchdog = gate->watchdog;
+    gate->in_flight += 1;
   }
 
-  payload->gate->watchdog->OnStackInterrupt(
-      isolate, payload->freeze_id, payload->generation, payload->sequence,
-      payload->max_frames);
+  watchdog->OnStackInterrupt(isolate, payload->freeze_id, payload->generation,
+                             payload->sequence, payload->max_frames);
+
+  {
+    std::lock_guard<std::mutex> lock(gate->mutex);
+    gate->in_flight -= 1;
+    gate->cv.notify_all();
+  }
 }
 
 }  // namespace
@@ -50,11 +61,15 @@ void Watchdog::SetIsolate(v8::Isolate* isolate) { isolate_ = isolate; }
 
 void Watchdog::DisableInterrupts() {
   interrupt_generation_.fetch_add(1, std::memory_order_acq_rel);
-  if (interrupt_gate_) {
-    std::lock_guard<std::mutex> lock(interrupt_gate_->mutex);
-    interrupt_gate_->open = false;
-    interrupt_gate_->watchdog = nullptr;
+  if (!interrupt_gate_) {
+    return;
   }
+
+  std::unique_lock<std::mutex> lock(interrupt_gate_->mutex);
+  interrupt_gate_->open = false;
+  interrupt_gate_->cv.wait(
+      lock, [this]() { return interrupt_gate_->in_flight == 0; });
+  interrupt_gate_->watchdog = nullptr;
 }
 
 bool Watchdog::ShouldCaptureOnStarted() const {
@@ -75,6 +90,8 @@ bool Watchdog::Start(const Config& config) {
   }
 
   config_ = config;
+  config_.capture_stack_max_frames =
+      ClampStackFrames(config_.capture_stack_max_frames);
   logger_->Configure(LoggerConfig{config_.log_target, config_.log_file});
   prev_wall_ms_ = 0;
   prev_cpu_ms_ = 0;
@@ -149,7 +166,7 @@ void Watchdog::RequestStackCapture(uint64_t freeze_id, uint32_t sequence) {
   payload->freeze_id = freeze_id;
   payload->generation = generation;
   payload->sequence = sequence;
-  payload->max_frames = config_.capture_stack_max_frames;
+  payload->max_frames = ClampStackFrames(config_.capture_stack_max_frames);
 
   isolate_->RequestInterrupt(StackInterruptCallback, payload);
 }
@@ -263,6 +280,12 @@ void Watchdog::Emit(Event event) {
   }
 
   logger_->LogEvent(event);
+
+  // Heartbeats stay in native logs only: the JS event loop is frozen, so
+  // bridging every heartbeat would grow the TSFN queue without draining.
+  if (event.type == EventType::FreezeHeartbeat) {
+    return;
+  }
 
   EventCallback callback;
   {
