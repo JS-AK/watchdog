@@ -1,3 +1,10 @@
+# [1.4.0](https://github.com/JS-AK/watchdog/compare/v1.3.0...v1.4.0) (2026-07-23)
+
+
+### Features
+
+* add log size rotation and soften heartbeat flush ([0a957dc](https://github.com/JS-AK/watchdog/commit/0a957dc25b7ec9833b1b61cb30bfce708121b982))
+
 # [1.3.0](https://github.com/JS-AK/watchdog/compare/v1.2.5...v1.3.0) (2026-07-23)
 
 
