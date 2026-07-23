@@ -92,7 +92,8 @@ bool Watchdog::Start(const Config& config) {
   config_ = config;
   config_.capture_stack_max_frames =
       ClampStackFrames(config_.capture_stack_max_frames);
-  logger_->Configure(LoggerConfig{config_.log_target, config_.log_file});
+  logger_->Configure(LoggerConfig{config_.log_target, config_.log_file,
+                                  config_.log_max_bytes});
   prev_wall_ms_ = 0;
   prev_cpu_ms_ = 0;
   // Prime CPU sampler so the first freeze event can compute a delta.

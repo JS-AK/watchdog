@@ -79,8 +79,15 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs (inclu
 | `heartbeatMs` | `1000` | `1..3600000`; native log cadence while frozen (not bridged to JS) |
 | `logTarget` | `"stderr"` | `"stderr"` \| `"file"` \| `"both"` |
 | `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
+| `logMaxBytes` | `10485760` (10 MiB) | soft size cap for the active log file; on overflow rename to `<logFile>.1` (one backup) and reopen; `0` disables; `0..1073741824` |
 | `source` | omit | optional app/service label (max 256 chars); included on native JSON Lines and JS events when set. Library identity is always `lib: "js-ak/watchdog"` |
 | `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames }` — see below |
+
+Local demo of size rotation (repo checkout only; not shipped in the npm tarball):
+
+```bash
+node examples/log-max-bytes.js
+```
 
 ### `captureStack` (experimental)
 

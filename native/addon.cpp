@@ -264,6 +264,15 @@ bool ReadConfig(napi_env env, napi_value object,
     }
   }
 
+  // Optional; JS validates range. 0 disables rotation. int64 covers the
+  // published max (1 GiB) without losing precision in N-API.
+  if (napi_get_named_property(env, object, "logMaxBytes", &value) == napi_ok) {
+    int64_t n = 0;
+    if (napi_get_value_int64(env, value, &n) == napi_ok && n >= 0) {
+      config->log_max_bytes = static_cast<uint64_t>(n);
+    }
+  }
+
   if (napi_get_named_property(env, object, "source", &value) == napi_ok) {
     size_t len = 0;
     napi_get_value_string_utf8(env, value, nullptr, 0, &len);

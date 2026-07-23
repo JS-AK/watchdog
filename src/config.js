@@ -14,6 +14,8 @@ const DEFAULTS = Object.freeze({
   heartbeatMs: 1000,
   logTarget: "stderr",
   logFile: "./watchdog.log",
+  // Soft cap for the active log file (one `<logFile>.1` backup). 0 = off.
+  logMaxBytes: 10 * 1024 * 1024,
   captureStack: false,
 });
 
@@ -25,6 +27,9 @@ const MAX_MS = 3_600_000; // 1 hour
 const MIN_STACK_FRAMES = 1;
 const MAX_STACK_FRAMES = 256;
 const MAX_SOURCE_LENGTH = 256;
+// 0 disables in-process rotation; otherwise up to 1 GiB.
+const MIN_LOG_MAX_BYTES = 0;
+const MAX_LOG_MAX_BYTES = 1024 * 1024 * 1024;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -139,6 +144,20 @@ function normalizeConfig(userConfig = {}) {
     );
   }
 
+  if (typeof config.logMaxBytes !== "number" || !Number.isInteger(config.logMaxBytes)) {
+    throw new TypeError(
+      `logMaxBytes must be an integer, got ${describeValue(config.logMaxBytes)}`,
+    );
+  }
+  if (
+    config.logMaxBytes < MIN_LOG_MAX_BYTES ||
+    config.logMaxBytes > MAX_LOG_MAX_BYTES
+  ) {
+    throw new RangeError(
+      `logMaxBytes must be between ${MIN_LOG_MAX_BYTES} and ${MAX_LOG_MAX_BYTES}, got ${config.logMaxBytes}`,
+    );
+  }
+
   let source;
   if (config.source !== undefined) {
     if (typeof config.source !== "string") {
@@ -162,6 +181,7 @@ function normalizeConfig(userConfig = {}) {
     heartbeatMs: config.heartbeatMs,
     logTarget: config.logTarget,
     logFile: config.logFile.trim(),
+    logMaxBytes: config.logMaxBytes,
     captureStack: normalizeCaptureStack(config.captureStack),
   };
   if (source !== undefined) {
@@ -181,5 +201,7 @@ module.exports = {
   MIN_STACK_FRAMES,
   MAX_STACK_FRAMES,
   MAX_SOURCE_LENGTH,
+  MIN_LOG_MAX_BYTES,
+  MAX_LOG_MAX_BYTES,
   normalizeConfig,
 };

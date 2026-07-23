@@ -38,6 +38,14 @@ describe("config", () => {
     assert.throws(() => normalizeConfig({ logTarget: "memory" }), TypeError);
   });
 
+  it("applies and validates logMaxBytes", () => {
+    assert.equal(normalizeConfig({}).logMaxBytes, DEFAULTS.logMaxBytes);
+    assert.equal(normalizeConfig({ logMaxBytes: 0 }).logMaxBytes, 0);
+    assert.equal(normalizeConfig({ logMaxBytes: 4096 }).logMaxBytes, 4096);
+    assert.throws(() => normalizeConfig({ logMaxBytes: -1 }), RangeError);
+    assert.throws(() => normalizeConfig({ logMaxBytes: 1.5 }), TypeError);
+  });
+
   it("accepts optional source and trims it", () => {
     assert.equal(normalizeConfig({}).source, undefined);
     assert.equal(normalizeConfig({ source: "  api  " }).source, "api");

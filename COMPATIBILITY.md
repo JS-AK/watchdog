@@ -14,8 +14,10 @@ These are covered by the compatibility promise:
 
 - Methods: `start`, `stop`, `isRunning`, `getConfig`, `on`, `once`, `off`, `removeAllListeners`
 - Export: `DEFAULTS` (frozen default config values)
-- Config keys: `freezeThresholdMs`, `heartbeatMs`, `logTarget`, `logFile`, `source`
-  (`source` optional app/service label; omit to leave the field off payloads)
+- Config keys: `freezeThresholdMs`, `heartbeatMs`, `logTarget`, `logFile`,
+  `logMaxBytes`, `source`
+  (`source` optional app/service label; omit to leave the field off payloads;
+  `logMaxBytes` soft file-size cap, `0` disables in-process rotation)
 - Event channels: `freeze`, `recovered`, `event`
 - Event payload fields:
   - `ts`, `lib`, `pid`, `event`, `freeze_id`, `duration_ms`
@@ -54,6 +56,12 @@ Notes on `ts`:
 - `stop()` during an active freeze closes the episode with `freeze_recovered`.
 - `getConfig().logFile` is the absolute path passed to the native logger.
 - Native freeze logs are written from a monitor thread and do not require a live event loop.
+- File logging keeps the handle open; `freeze_heartbeat` lines are buffered in the file
+  sink (no per-heartbeat flush) while stderr is always flushed. Lifecycle events
+  (`started` / `recovered` / `stack`) flush the file. `stop()` / rotate close flushes
+  remaining buffered heartbeats.
+- When `logMaxBytes` > 0, exceeding the cap renames the active file to `<logFile>.1`
+  (one backup) and opens a new file (best-effort; host logrotate still OK).
 - JS event listeners run on the event loop, so during a freeze they are queued and delivered after recovery
   (except best-effort work that already ran on the isolate thread, e.g. stack capture logging).
 
