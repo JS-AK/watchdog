@@ -1,3 +1,10 @@
+## [1.2.5](https://github.com/JS-AK/watchdog/compare/v1.2.4...v1.2.5) (2026-07-23)
+
+
+### Bug Fixes
+
+* skip heartbeat JS bridge and harden native emit path ([88329df](https://github.com/JS-AK/watchdog/commit/88329dfbfbef63bb62bd34f2b6a06410ddb2ab92))
+
 ## [1.2.4](https://github.com/JS-AK/watchdog/compare/v1.2.3...v1.2.4) (2026-07-22)
 
 
