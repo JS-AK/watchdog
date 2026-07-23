@@ -5,8 +5,9 @@ const LIB = "js-ak/watchdog";
 
 const DEFAULT_CAPTURE_STACK = Object.freeze({
   mode: "interrupt",
-  on: "started",
+  on: "both",
   maxFrames: 50,
+  maxSamples: 8,
 });
 
 const DEFAULTS = Object.freeze({
@@ -26,6 +27,8 @@ const MIN_MS = 1;
 const MAX_MS = 3_600_000; // 1 hour
 const MIN_STACK_FRAMES = 1;
 const MAX_STACK_FRAMES = 256;
+const MIN_STACK_SAMPLES = 1;
+const MAX_STACK_SAMPLES = 32;
 const MAX_SOURCE_LENGTH = 256;
 // 0 disables in-process rotation; otherwise up to 1 GiB.
 const MIN_LOG_MAX_BYTES = 0;
@@ -107,10 +110,26 @@ function normalizeCaptureStack(value) {
     );
   }
 
+  const maxSamples =
+    options.maxSamples === undefined
+      ? DEFAULT_CAPTURE_STACK.maxSamples
+      : options.maxSamples;
+  if (typeof maxSamples !== "number" || !Number.isInteger(maxSamples)) {
+    throw new TypeError(
+      `captureStack.maxSamples must be an integer, got ${describeValue(maxSamples)}`,
+    );
+  }
+  if (maxSamples < MIN_STACK_SAMPLES || maxSamples > MAX_STACK_SAMPLES) {
+    throw new RangeError(
+      `captureStack.maxSamples must be between ${MIN_STACK_SAMPLES} and ${MAX_STACK_SAMPLES}, got ${maxSamples}`,
+    );
+  }
+
   return Object.freeze({
     mode,
     on,
     maxFrames,
+    maxSamples,
   });
 }
 
@@ -200,6 +219,8 @@ module.exports = {
   MAX_MS,
   MIN_STACK_FRAMES,
   MAX_STACK_FRAMES,
+  MIN_STACK_SAMPLES,
+  MAX_STACK_SAMPLES,
   MAX_SOURCE_LENGTH,
   MIN_LOG_MAX_BYTES,
   MAX_LOG_MAX_BYTES,

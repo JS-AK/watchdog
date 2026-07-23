@@ -81,8 +81,15 @@ The interrupt callback runs on the isolate thread, captures `v8::StackTrace`,
 and only stashes frames (+ queues a pending event). The monitor thread then
 writes `freeze_stack` / notifies JS — never logger or N-API from the interrupt.
 
-- Default sampling: on `freeze_started` only (`on: "started"`).
-- `"both"` / `"heartbeat"` re-sample on heartbeats.
+- Default sampling: on `freeze_started` and each `freeze_heartbeat` (`on: "both"`).
+- `"started"` / `"heartbeat"` narrow when interrupts are requested.
+- Unique stack shapes are aggregated per freeze (capped by `maxSamples`); on
+  `freeze_recovered`, `stack` is the most frequent sample and `stack_samples`
+  lists `{ count, stack }` sorted by count descending.
+- A single interrupt sample is not reliable attribution under many concurrent
+  async handlers (often only `processTicksAndRejections`); multi-sample helps
+  longer freezes but is not a CPU profile. A future experimental profiler mode
+  may cover that case.
 - Sync I/O / native blocks may never reach a safepoint → `stack_status: "unavailable"` (no `stack` field).
 - `freeze_stack` reuses `rss_mb` / `cpu_pct` from the latest lifecycle event so a near-zero-delta CPU sample is not emitted.
 - Implemented in-core (experimental); not a separate package.
@@ -137,6 +144,8 @@ Optional (experimental, when `captureStack` is enabled):
 - `stack_status` — `"ok"` \| `"unavailable"`
 - `stack_mode` — `"interrupt"`
 - `stack` — string frames; present only when `stack_status` is `"ok"`
+  (on recovered: most frequent sample)
+- `stack_samples` — on recovered: `[{ count, stack }, ...]` sorted by count descending
 
 ## Error Handling and Safety
 
