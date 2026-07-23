@@ -94,9 +94,61 @@ jobs:
           path: prebuilds/
           if-no-files-found: error
 
+  # Alpine / musl: separate from ubuntu glibc so node-gyp-build can pick *.musl.node.
+  prebuild-musl:
+    name: prebuild (linux-${{ matrix.arch }}-musl / Node ${{ matrix.node }})
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: node:${{ matrix.node }}-alpine
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-22.04
+            arch: x64
+            node: 22
+          - runner: ubuntu-22.04
+            arch: x64
+            node: 24
+          - runner: ubuntu-22.04
+            arch: x64
+            node: 26
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+            node: 22
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+            node: 24
+          - runner: ubuntu-22.04-arm
+            arch: arm64
+            node: 26
+
+    steps:
+      - name: Install build tools
+        run: apk add --no-cache python3 make g++ git
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build prebuild
+        run: npm run prebuild
+
+      - name: Smoke load prebuild
+        run: npm run smoke:prebuild
+
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: prebuild-linux-${{ matrix.arch }}-musl-node${{ matrix.node }}
+          path: prebuilds/
+          if-no-files-found: error
+
   release:
     name: Release
-    needs: prebuild
+    needs: [prebuild, prebuild-musl]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
