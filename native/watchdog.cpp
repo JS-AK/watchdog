@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 
+#include "cpu_profile.h"
 #include "logger.h"
 #include "metrics.h"
 #include "stack_capture.h"
@@ -28,7 +29,7 @@ void StackInterruptCallback(v8::Isolate* isolate, void* data) {
   Watchdog* watchdog = nullptr;
   {
     // Pin Watchdog via in_flight so Stop()/DisableInterrupts waits before
-    // nulling watchdog — CaptureJsStack must not run under gate->mutex.
+    // nulling watchdog — isolate work must not run under gate->mutex.
     std::lock_guard<std::mutex> lock(gate->mutex);
     if (!gate->open || gate->watchdog == nullptr) {
       return;
@@ -37,8 +38,9 @@ void StackInterruptCallback(v8::Isolate* isolate, void* data) {
     gate->in_flight += 1;
   }
 
-  watchdog->OnStackInterrupt(isolate, payload->freeze_id, payload->generation,
-                             payload->sequence, payload->max_frames);
+  watchdog->OnInterrupt(isolate, payload->action, payload->freeze_id,
+                        payload->generation, payload->sequence,
+                        payload->max_frames);
 
   {
     std::lock_guard<std::mutex> lock(gate->mutex);
@@ -73,16 +75,28 @@ void Watchdog::DisableInterrupts() {
   interrupt_gate_->watchdog = nullptr;
 }
 
+bool Watchdog::IsProfileMode() const {
+  return config_.capture_stack &&
+         config_.capture_stack_mode == StackCaptureMode::Profile;
+}
+
 bool Watchdog::ShouldCaptureOnStarted() const {
   return config_.capture_stack &&
+         config_.capture_stack_mode == StackCaptureMode::Interrupt &&
          (config_.capture_stack_on == StackCaptureOn::Started ||
           config_.capture_stack_on == StackCaptureOn::Both);
 }
 
 bool Watchdog::ShouldCaptureOnHeartbeat() const {
   return config_.capture_stack &&
+         config_.capture_stack_mode == StackCaptureMode::Interrupt &&
          (config_.capture_stack_on == StackCaptureOn::Heartbeat ||
           config_.capture_stack_on == StackCaptureOn::Both);
+}
+
+uint32_t Watchdog::ProfileArmMs() const {
+  const uint32_t half = config_.freeze_threshold_ms / 2;
+  return half < 1 ? 1 : half;
 }
 
 bool Watchdog::Start(const Config& config) {
@@ -103,6 +117,8 @@ bool Watchdog::Start(const Config& config) {
   SampleCpuPercent(&prev_wall_ms_, &prev_cpu_ms_);
   last_kick_ms_.store(NowMs(), std::memory_order_release);
   active_freeze_id_.store(0, std::memory_order_release);
+  profile_running_.store(false, std::memory_order_release);
+  profile_start_pending_.store(false, std::memory_order_release);
 
   {
     std::lock_guard<std::mutex> lock(metrics_cache_mutex_);
@@ -120,6 +136,11 @@ bool Watchdog::Start(const Config& config) {
     std::lock_guard<std::mutex> lock(pending_stack_mutex_);
     pending_stack_ready_ = false;
     pending_stack_event_ = Event{};
+  }
+
+  {
+    std::lock_guard<std::mutex> lock(profile_op_mutex_);
+    profile_op_done_ = true;
   }
 
   if (config_.capture_stack && isolate_ != nullptr) {
@@ -140,11 +161,18 @@ void Watchdog::Stop() {
     return;
   }
 
-  DisableInterrupts();
-
+  // Join first so the monitor can still RequestInterrupt for profile stop /
+  // dispose while the gate is open.
   if (monitor_.joinable()) {
     monitor_.join();
   }
+
+  if (IsProfileMode() && interrupt_gate_ && isolate_ != nullptr) {
+    RequestInterruptAction(InterruptAction::ProfileDispose, 0, 0);
+    WaitInterruptAction(500);
+  }
+
+  DisableInterrupts();
 }
 
 bool Watchdog::IsRunning() const {
@@ -155,16 +183,26 @@ void Watchdog::Kick() {
   last_kick_ms_.store(NowMs(), std::memory_order_release);
 }
 
-void Watchdog::RequestStackCapture(uint64_t freeze_id, uint32_t sequence) {
+void Watchdog::RequestInterruptAction(InterruptAction action,
+                                      uint64_t freeze_id, uint32_t sequence) {
   if (!config_.capture_stack || isolate_ == nullptr || !interrupt_gate_) {
+    if (action != InterruptAction::CaptureStack) {
+      SignalInterruptActionDone();
+    }
     return;
   }
 
   const uint64_t generation =
       interrupt_generation_.load(std::memory_order_acquire);
 
+  if (action != InterruptAction::CaptureStack) {
+    std::lock_guard<std::mutex> lock(profile_op_mutex_);
+    profile_op_done_ = false;
+  }
+
   auto* payload = new StackInterruptPayload();
   payload->gate = interrupt_gate_;
+  payload->action = action;
   payload->freeze_id = freeze_id;
   payload->generation = generation;
   payload->sequence = sequence;
@@ -173,54 +211,145 @@ void Watchdog::RequestStackCapture(uint64_t freeze_id, uint32_t sequence) {
   isolate_->RequestInterrupt(StackInterruptCallback, payload);
 }
 
-void Watchdog::OnStackInterrupt(v8::Isolate* isolate, uint64_t freeze_id,
-                                uint64_t generation, uint32_t sequence,
-                                uint32_t max_frames) {
+bool Watchdog::WaitInterruptAction(uint32_t timeout_ms) {
+  std::unique_lock<std::mutex> lock(profile_op_mutex_);
+  return profile_op_cv_.wait_for(
+      lock, std::chrono::milliseconds(timeout_ms),
+      [this]() { return profile_op_done_; });
+}
+
+void Watchdog::SignalInterruptActionDone() {
+  std::lock_guard<std::mutex> lock(profile_op_mutex_);
+  profile_op_done_ = true;
+  profile_op_cv_.notify_all();
+}
+
+void Watchdog::OnInterrupt(v8::Isolate* isolate, InterruptAction action,
+                           uint64_t freeze_id, uint64_t generation,
+                           uint32_t sequence, uint32_t max_frames) {
   if (generation !=
       interrupt_generation_.load(std::memory_order_acquire)) {
+    if (action != InterruptAction::CaptureStack) {
+      SignalInterruptActionDone();
+    }
     return;
   }
-  if (freeze_id == 0 ||
-      freeze_id != active_freeze_id_.load(std::memory_order_acquire)) {
-    return;
-  }
-  if (!running_.load(std::memory_order_acquire)) {
-    return;
-  }
-
-  // Keep this callback minimal: no logger, no N-API/TSFN, no metrics sample.
-  // Emitting via TSFN from a V8 interrupt re-enters Node on the isolate thread
-  // and can abort the process (seen with captureStack enabled).
-  std::vector<std::string> frames =
-      CaptureJsStack(isolate, static_cast<int>(max_frames));
-  if (frames.empty()) {
+  if (!running_.load(std::memory_order_acquire) &&
+      action != InterruptAction::ProfileDispose &&
+      action != InterruptAction::ProfileStopAttach &&
+      action != InterruptAction::ProfileStopDiscard) {
+    if (action != InterruptAction::CaptureStack) {
+      SignalInterruptActionDone();
+    }
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock(stack_mutex_);
-    RecordStackSampleLocked(freeze_id, frames);
-  }
+  switch (action) {
+    case InterruptAction::CaptureStack: {
+      if (freeze_id == 0 ||
+          freeze_id != active_freeze_id_.load(std::memory_order_acquire)) {
+        return;
+      }
 
-  const uint64_t now = NowMs();
-  const uint64_t last = last_kick_ms_.load(std::memory_order_acquire);
-  const uint64_t lag = now > last ? now - last : 0;
+      // Keep this callback minimal: no logger, no N-API/TSFN, no metrics sample.
+      std::vector<std::string> frames =
+          CaptureJsStack(isolate, static_cast<int>(max_frames));
+      if (frames.empty()) {
+        return;
+      }
 
-  Event event;
-  event.type = EventType::FreezeStack;
-  event.freeze_id = freeze_id;
-  event.duration_ms = lag;
-  event.threshold_ms = config_.freeze_threshold_ms;
-  event.heartbeat_ms = config_.heartbeat_ms;
-  event.sequence = sequence;
-  event.stack_status = StackStatus::Ok;
-  event.stack_mode = "interrupt";
-  event.stack = std::move(frames);
+      {
+        std::lock_guard<std::mutex> lock(stack_mutex_);
+        RecordStackSampleLocked(freeze_id, frames);
+      }
 
-  {
-    std::lock_guard<std::mutex> lock(pending_stack_mutex_);
-    pending_stack_event_ = std::move(event);
-    pending_stack_ready_ = true;
+      const uint64_t now = NowMs();
+      const uint64_t last = last_kick_ms_.load(std::memory_order_acquire);
+      const uint64_t lag = now > last ? now - last : 0;
+
+      Event event;
+      event.type = EventType::FreezeStack;
+      event.freeze_id = freeze_id;
+      event.duration_ms = lag;
+      event.threshold_ms = config_.freeze_threshold_ms;
+      event.heartbeat_ms = config_.heartbeat_ms;
+      event.sequence = sequence;
+      event.stack_status = StackStatus::Ok;
+      event.stack_mode = "interrupt";
+      event.stack = std::move(frames);
+
+      {
+        std::lock_guard<std::mutex> lock(pending_stack_mutex_);
+        pending_stack_event_ = std::move(event);
+        pending_stack_ready_ = true;
+      }
+      return;
+    }
+
+    case InterruptAction::ProfileStart: {
+      if (profile_running_.load(std::memory_order_acquire)) {
+        profile_start_pending_.store(false, std::memory_order_release);
+        SignalInterruptActionDone();
+        return;
+      }
+      const bool started = StartCpuProfiling(isolate, &cpu_profiler_);
+      profile_running_.store(started, std::memory_order_release);
+      profile_start_pending_.store(false, std::memory_order_release);
+      SignalInterruptActionDone();
+      return;
+    }
+
+    case InterruptAction::ProfileStopDiscard: {
+      if (profile_running_.load(std::memory_order_acquire) &&
+          cpu_profiler_ != nullptr) {
+        v8::CpuProfile* profile = StopCpuProfiling(isolate, cpu_profiler_);
+        if (profile != nullptr) {
+          profile->Delete();
+        }
+      }
+      profile_running_.store(false, std::memory_order_release);
+      profile_start_pending_.store(false, std::memory_order_release);
+      SignalInterruptActionDone();
+      return;
+    }
+
+    case InterruptAction::ProfileStopAttach: {
+      std::vector<StackSample> samples;
+      if (profile_running_.load(std::memory_order_acquire) &&
+          cpu_profiler_ != nullptr) {
+        v8::CpuProfile* profile = StopCpuProfiling(isolate, cpu_profiler_);
+        if (profile != nullptr) {
+          samples = CollectCpuProfileSamples(
+              isolate, profile, static_cast<int>(max_frames),
+              config_.capture_stack_max_samples);
+          profile->Delete();
+        }
+      }
+      profile_running_.store(false, std::memory_order_release);
+      profile_start_pending_.store(false, std::memory_order_release);
+
+      {
+        std::lock_guard<std::mutex> lock(stack_mutex_);
+        ApplyProfileSamplesLocked(freeze_id, std::move(samples));
+      }
+      SignalInterruptActionDone();
+      return;
+    }
+
+    case InterruptAction::ProfileDispose: {
+      if (profile_running_.load(std::memory_order_acquire) &&
+          cpu_profiler_ != nullptr) {
+        v8::CpuProfile* profile = StopCpuProfiling(isolate, cpu_profiler_);
+        if (profile != nullptr) {
+          profile->Delete();
+        }
+      }
+      profile_running_.store(false, std::memory_order_release);
+      profile_start_pending_.store(false, std::memory_order_release);
+      DisposeCpuProfiler(&cpu_profiler_);
+      SignalInterruptActionDone();
+      return;
+    }
   }
 }
 
@@ -229,6 +358,22 @@ void Watchdog::ClearStackAggregationLocked() {
   stacked_status_ = StackStatus::None;
   stacked_frames_.clear();
   stacked_samples_.clear();
+  stacked_mode_.clear();
+}
+
+void Watchdog::ApplyProfileSamplesLocked(uint64_t freeze_id,
+                                         std::vector<StackSample> samples) {
+  stacked_freeze_id_ = freeze_id;
+  stacked_mode_ = "profile";
+  if (samples.empty()) {
+    stacked_status_ = StackStatus::Unavailable;
+    stacked_frames_.clear();
+    stacked_samples_.clear();
+    return;
+  }
+  stacked_status_ = StackStatus::Ok;
+  stacked_samples_ = std::move(samples);
+  stacked_frames_ = stacked_samples_.front().stack;
 }
 
 void Watchdog::RecordStackSampleLocked(
@@ -236,6 +381,7 @@ void Watchdog::RecordStackSampleLocked(
   stacked_freeze_id_ = freeze_id;
   stacked_status_ = StackStatus::Ok;
   stacked_frames_ = frames;
+  stacked_mode_ = "interrupt";
 
   for (StackSample& sample : stacked_samples_) {
     if (sample.stack == frames) {
@@ -270,14 +416,38 @@ void Watchdog::DrainPendingStackEvent() {
   Emit(event);
 }
 
+void Watchdog::FinalizeProfileForRecovered(uint64_t freeze_id) {
+  if (!IsProfileMode()) {
+    return;
+  }
+  if (!profile_running_.load(std::memory_order_acquire) &&
+      !profile_start_pending_.load(std::memory_order_acquire)) {
+    std::lock_guard<std::mutex> lock(stack_mutex_);
+    if (stacked_freeze_id_ != freeze_id) {
+      stacked_freeze_id_ = freeze_id;
+      stacked_status_ = StackStatus::Unavailable;
+      stacked_mode_ = "profile";
+      stacked_frames_.clear();
+      stacked_samples_.clear();
+    }
+    return;
+  }
+
+  RequestInterruptAction(InterruptAction::ProfileStopAttach, freeze_id, 0);
+  WaitInterruptAction(1000);
+}
+
 void Watchdog::AttachRecoveredStack(Event* event, uint64_t freeze_id) {
   if (!config_.capture_stack || event == nullptr) {
     return;
   }
 
-  event->stack_mode = "interrupt";
-
   std::lock_guard<std::mutex> lock(stack_mutex_);
+  event->stack_mode =
+      stacked_mode_.empty()
+          ? (IsProfileMode() ? "profile" : "interrupt")
+          : stacked_mode_;
+
   if (stacked_freeze_id_ == freeze_id &&
       stacked_status_ == StackStatus::Ok && !stacked_samples_.empty()) {
     std::vector<StackSample> samples = stacked_samples_;
@@ -344,6 +514,7 @@ void Watchdog::Emit(Event event) {
 
 void Watchdog::MonitorLoop() {
   bool frozen = false;
+  bool profile_armed = false;
   uint64_t freeze_began_at_ms = 0;
   uint64_t freeze_id = 0;
   uint64_t last_heartbeat_at_ms = 0;
@@ -369,6 +540,28 @@ void Watchdog::MonitorLoop() {
     const uint64_t now = NowMs();
     const uint64_t last = last_kick_ms_.load(std::memory_order_acquire);
     const uint64_t lag = now > last ? now - last : 0;
+    const uint32_t arm_ms = ProfileArmMs();
+
+    if (IsProfileMode()) {
+      if (!frozen && lag >= arm_ms) {
+        if (!profile_running_.load(std::memory_order_acquire) &&
+            !profile_start_pending_.load(std::memory_order_acquire)) {
+          profile_start_pending_.store(true, std::memory_order_release);
+          profile_armed = true;
+          RequestInterruptAction(InterruptAction::ProfileStart, 0, 0);
+        } else {
+          profile_armed = true;
+        }
+      } else if (!frozen && profile_armed && lag < arm_ms) {
+        // False alarm: stop and discard without a freeze episode.
+        if (profile_running_.load(std::memory_order_acquire) ||
+            profile_start_pending_.load(std::memory_order_acquire)) {
+          RequestInterruptAction(InterruptAction::ProfileStopDiscard, 0, 0);
+          WaitInterruptAction(500);
+        }
+        profile_armed = false;
+      }
+    }
 
     if (!frozen && lag >= config_.freeze_threshold_ms) {
       frozen = true;
@@ -382,6 +575,7 @@ void Watchdog::MonitorLoop() {
         ClearStackAggregationLocked();
         stacked_freeze_id_ = freeze_id;
         stacked_status_ = StackStatus::Unavailable;
+        stacked_mode_ = IsProfileMode() ? "profile" : "interrupt";
       }
       {
         std::lock_guard<std::mutex> lock(pending_stack_mutex_);
@@ -389,8 +583,16 @@ void Watchdog::MonitorLoop() {
         pending_stack_event_ = Event{};
       }
       emit(EventType::FreezeStarted, lag);
-      if (ShouldCaptureOnStarted()) {
-        RequestStackCapture(freeze_id, sequence);
+      if (IsProfileMode()) {
+        if (!profile_running_.load(std::memory_order_acquire) &&
+            !profile_start_pending_.load(std::memory_order_acquire)) {
+          profile_start_pending_.store(true, std::memory_order_release);
+          RequestInterruptAction(InterruptAction::ProfileStart, freeze_id, 0);
+        }
+        profile_armed = true;
+      } else if (ShouldCaptureOnStarted()) {
+        RequestInterruptAction(InterruptAction::CaptureStack, freeze_id,
+                               sequence);
       }
     } else if (frozen && lag >= config_.freeze_threshold_ms) {
       if (now - last_heartbeat_at_ms >= config_.heartbeat_ms) {
@@ -398,14 +600,17 @@ void Watchdog::MonitorLoop() {
         last_heartbeat_at_ms = now;
         emit(EventType::FreezeHeartbeat, now - freeze_began_at_ms);
         if (ShouldCaptureOnHeartbeat()) {
-          RequestStackCapture(freeze_id, sequence);
+          RequestInterruptAction(InterruptAction::CaptureStack, freeze_id,
+                                 sequence);
         }
       }
     } else if (frozen && lag < config_.freeze_threshold_ms) {
       // Flush any stack sample captured just before recovery.
       DrainPendingStackEvent();
+      FinalizeProfileForRecovered(freeze_id);
       emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
       frozen = false;
+      profile_armed = false;
       freeze_began_at_ms = 0;
       last_heartbeat_at_ms = 0;
       sequence = 0;
@@ -420,9 +625,15 @@ void Watchdog::MonitorLoop() {
 
   // Close out an in-flight freeze when stop() interrupts the monitor.
   if (frozen) {
+    FinalizeProfileForRecovered(freeze_id);
     const uint64_t now = NowMs();
     emit(EventType::FreezeRecovered, now - freeze_began_at_ms);
     active_freeze_id_.store(0, std::memory_order_release);
+  } else if (IsProfileMode() &&
+             (profile_running_.load(std::memory_order_acquire) ||
+              profile_start_pending_.load(std::memory_order_acquire))) {
+    RequestInterruptAction(InterruptAction::ProfileStopDiscard, 0, 0);
+    WaitInterruptAction(500);
   }
 }
 

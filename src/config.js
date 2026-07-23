@@ -10,6 +10,13 @@ const DEFAULT_CAPTURE_STACK = Object.freeze({
   maxSamples: 8,
 });
 
+const DEFAULT_CAPTURE_STACK_PROFILE = Object.freeze({
+  mode: "profile",
+  on: "both", // ignored by native; kept for a stable normalized shape
+  maxFrames: 50,
+  maxSamples: 8,
+});
+
 const DEFAULTS = Object.freeze({
   freezeThresholdMs: 1000,
   heartbeatMs: 1000,
@@ -82,16 +89,9 @@ function normalizeCaptureStack(value) {
   }
 
   const mode = options.mode === undefined ? DEFAULT_CAPTURE_STACK.mode : options.mode;
-  if (mode !== "interrupt") {
+  if (mode !== "interrupt" && mode !== "profile") {
     throw new TypeError(
-      `captureStack.mode must be "interrupt", got ${describeValue(mode)}`,
-    );
-  }
-
-  const on = options.on === undefined ? DEFAULT_CAPTURE_STACK.on : options.on;
-  if (!CAPTURE_STACK_ON.has(on)) {
-    throw new TypeError(
-      `captureStack.on must be one of "started", "heartbeat", "both", got ${describeValue(on)}`,
+      `captureStack.mode must be "interrupt" or "profile", got ${describeValue(mode)}`,
     );
   }
 
@@ -122,6 +122,22 @@ function normalizeCaptureStack(value) {
   if (maxSamples < MIN_STACK_SAMPLES || maxSamples > MAX_STACK_SAMPLES) {
     throw new RangeError(
       `captureStack.maxSamples must be between ${MIN_STACK_SAMPLES} and ${MAX_STACK_SAMPLES}, got ${maxSamples}`,
+    );
+  }
+
+  if (mode === "profile") {
+    return Object.freeze({
+      mode,
+      on: DEFAULT_CAPTURE_STACK_PROFILE.on,
+      maxFrames,
+      maxSamples,
+    });
+  }
+
+  const on = options.on === undefined ? DEFAULT_CAPTURE_STACK.on : options.on;
+  if (!CAPTURE_STACK_ON.has(on)) {
+    throw new TypeError(
+      `captureStack.on must be one of "started", "heartbeat", "both", got ${describeValue(on)}`,
     );
   }
 
@@ -213,6 +229,7 @@ module.exports = {
   LIB,
   DEFAULTS,
   DEFAULT_CAPTURE_STACK,
+  DEFAULT_CAPTURE_STACK_PROFILE,
   LOG_TARGETS,
   CAPTURE_STACK_ON,
   MIN_MS,
