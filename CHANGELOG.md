@@ -1,3 +1,10 @@
+## [1.4.1](https://github.com/JS-AK/watchdog/compare/v1.4.0...v1.4.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* tag linux prebuilds by libc and ship musl builds ([7334aa3](https://github.com/JS-AK/watchdog/commit/7334aa3fd0971c06f0537f86b263e991a2cd7fd0))
+
 # [1.4.0](https://github.com/JS-AK/watchdog/compare/v1.3.0...v1.4.0) (2026-07-23)
 
 
