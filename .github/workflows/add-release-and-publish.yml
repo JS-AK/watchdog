@@ -94,12 +94,12 @@ jobs:
           path: prebuilds/
           if-no-files-found: error
 
-  # Alpine / musl: separate from ubuntu glibc so node-gyp-build can pick *.musl.node.
+  # Alpine / musl: build inside docker so host checkout/upload Actions work on
+  # arm64 too (JS Actions are not supported in Alpine containers on ARM runners).
+  # https://github.com/JS-AK/watchdog/actions/runs/30015249204/job/89233421889
   prebuild-musl:
     name: prebuild (linux-${{ matrix.arch }}-musl / Node ${{ matrix.node }})
     runs-on: ${{ matrix.runner }}
-    container:
-      image: node:${{ matrix.node }}-alpine
     strategy:
       fail-fast: false
       matrix:
@@ -124,20 +124,16 @@ jobs:
             node: 26
 
     steps:
-      - name: Install build tools
-        run: apk add --no-cache python3 make g++ git
-
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build prebuild
-        run: npm run prebuild
-
-      - name: Smoke load prebuild
-        run: npm run smoke:prebuild
+      - name: Build musl prebuild in Alpine
+        run: |
+          docker run --rm \
+            -v "$PWD":/src \
+            -w /src \
+            "node:${{ matrix.node }}-alpine" \
+            sh -c 'apk add --no-cache python3 make g++ git && npm ci && npm run prebuild && npm run smoke:prebuild'
 
       - name: Upload prebuild artifact
         uses: actions/upload-artifact@v7
