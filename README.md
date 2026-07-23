@@ -14,7 +14,20 @@ Published builds include ABI-tagged prebuilds for `win32-x64`, `linux-x64`, `lin
 
 `captureStack` needs a matching `NODE_MODULE_VERSION` prebuild (same rule Node uses for native addons). All patches within a shipped major share one ABI; an unsupported major disables capture with a warning until that ABI is published.
 
-Linux prebuilds are produced on Ubuntu 22.04 for broader `libstdc++` compatibility with Debian bookworm / slim images.
+### Linux: glibc vs musl
+
+On Linux the native addon must match the **C library** of the runtime, not just `linux-x64` / `linux-arm64`:
+
+| Runtime | libc | Prebuild tag | Typical images / hosts |
+| --- | --- | --- | --- |
+| Debian, Ubuntu, RHEL, most cloud VMs | **glibc** | `*.glibc.node` | `node:*-bookworm`, `node:*-slim`, GitHub `ubuntu-*` |
+| Alpine Linux | **musl** | `*.musl.node` | `node:*-alpine` |
+
+`npm install` (via `node-gyp-build`) picks the tagged file automatically — you do not choose it by hand; your OS / Docker base image decides which one you need.
+
+**Why it matters:** a glibc `.node` can sometimes `dlopen` on Alpine and then **SIGSEGV** later (exit **139**), especially with `captureStack` / V8 `RequestInterrupt`. That is why Linux prebuilds are libc-tagged and why Alpine gets its own musl builds.
+
+glibc builds are produced on Ubuntu 22.04 (broader `libstdc++` reach for Debian bookworm / slim). musl builds are produced on Alpine.
 
 From a git checkout (no prebuilds yet):
 
@@ -144,6 +157,7 @@ When enabled, native logs / JS events may include:
 | No `freeze_stack` / `stack_status: "unavailable"` | Sync I/O, native addon, or interrupt never reached a V8 safepoint | Expected for non-JS blocks; check native logs around recovery; try `on: "both"` for retries |
 | `captureStack` off + ABI warning | No prebuild for this Node major / wrong binary loaded | Use Node 22/24/26, or upgrade `@js-ak/watchdog` once that ABI is published |
 | `npm ci` in Debian slim tries to compile / needs Python | Linux prebuild needs newer `libstdc++` than the image, so load fails and install falls back to `node-gyp` | Use a newer base image, or upgrade `@js-ak/watchdog` (Ubuntu 22.04 prebuilds) |
+| Container exit **139** / SIGSEGV (often with `captureStack`) on Alpine | glibc Linux prebuild loaded on musl | Use a release with libc-tagged + musl prebuilds; or switch to a glibc image (`node:*-bookworm-slim`); or rebuild from source on Alpine after removing `node_modules/@js-ak/watchdog/prebuilds` |
 
 ## Compatibility
 

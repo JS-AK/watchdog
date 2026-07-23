@@ -48,6 +48,8 @@ Notes on `ts`:
   - if the loaded native addon ABI (`NODE_MODULE_VERSION`) differs from the
     runtime (no matching published prebuild for this Node major),
     `captureStack` is disabled with a warning.
+  - Linux prebuilds are libc-tagged (`glibc` / `musl`); loading an untagged
+    glibc binary on Alpine is unsupported and may SIGSEGV under `captureStack`.
 
 ## Behavioral guarantees
 
