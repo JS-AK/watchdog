@@ -139,11 +139,12 @@ describe("hardening: failure modes", () => {
     );
 
     const events = [];
-    watchdog.on("event", (event) => events.push(event));
+    const onEvent = (event) => events.push(event);
+    watchdog.on("event", onEvent);
 
     assert.equal(
       watchdog.start({
-        freezeThresholdMs: 120,
+        freezeThresholdMs: 100,
         heartbeatMs: 80,
         logTarget: "file",
         logFile: badPath,
@@ -151,10 +152,14 @@ describe("hardening: failure modes", () => {
       true,
     );
 
-    await sleep(50);
-    busyWait(260);
-    await sleep(200);
+    await sleep(60);
+    // Extra headroom for slow CI (e.g. macos-15-intel): unwritable file
+    // sink must not block freeze detection / JS event delivery.
+    busyWait(400);
+    await sleep(350);
+    watchdog.off("event", onEvent);
     watchdog.stop();
+    await sleep(80);
 
     const types = events.map((event) => event.event);
     assert.ok(types.includes("freeze_started"), `missing started: ${types}`);
