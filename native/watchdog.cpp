@@ -257,6 +257,9 @@ void Watchdog::AttachRecoveredStack(Event* event, uint64_t freeze_id) {
 }
 
 void Watchdog::Emit(Event event) {
+  // Stamp optional app label once for native logs and the JS bridge.
+  event.source = config_.source;
+
   if (event.type == EventType::FreezeStack) {
     // Do not call SampleMetrics here: interrupt often lands <1ms after
     // started/heartbeat and would produce cpu_pct 0 / -1 while also

@@ -37,6 +37,21 @@ describe("config", () => {
   it("rejects invalid logTarget", () => {
     assert.throws(() => normalizeConfig({ logTarget: "memory" }), TypeError);
   });
+
+  it("accepts optional source and trims it", () => {
+    assert.equal(normalizeConfig({}).source, undefined);
+    assert.equal(normalizeConfig({ source: "  api  " }).source, "api");
+  });
+
+  it("rejects invalid source", () => {
+    assert.throws(() => normalizeConfig({ source: "" }), TypeError);
+    assert.throws(() => normalizeConfig({ source: "   " }), TypeError);
+    assert.throws(() => normalizeConfig({ source: 1 }), TypeError);
+    assert.throws(
+      () => normalizeConfig({ source: "x".repeat(257) }),
+      RangeError,
+    );
+  });
 });
 
 describe("api surface", () => {

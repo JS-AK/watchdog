@@ -20,6 +20,12 @@ declare namespace watchdog {
     /** Log file path when logTarget is "file" or "both". */
     logFile?: string;
     /**
+     * Optional app/service label for monitoring (not library identity).
+     * When set, included as `source` on native JSON Lines and JS events.
+     * Max length: 256. Library identity is always `lib: "js-ak/watchdog"`.
+     */
+    source?: string;
+    /**
      * Opt-in JS stack capture via V8 interrupt (unstable).
      * `true` enables defaults; `false`/omit disables.
      */
@@ -43,6 +49,10 @@ declare namespace watchdog {
      * Native JSON Lines use sample time and may differ for the same freeze.
      */
     ts: string;
+    /** Fixed library identity (`"js-ak/watchdog"`). */
+    lib: "js-ak/watchdog";
+    /** App/service label from `start({ source })`; omitted when not configured. */
+    source?: string;
     /** Process id that emitted the event. */
     pid: number;
     /** Freeze lifecycle kind. */
@@ -76,6 +86,8 @@ declare namespace watchdog {
     heartbeatMs: number;
     logTarget: "stderr" | "file" | "both";
     logFile: string;
+    /** Present only when `start({ source })` was set. */
+    source?: string;
     captureStack: NormalizedCaptureStack;
   }
 

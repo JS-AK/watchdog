@@ -63,6 +63,17 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
   napi_create_string_utf8(env, type_name, NAPI_AUTO_LENGTH, &event_type);
   napi_set_named_property(env, object, "event", event_type);
 
+  napi_value lib;
+  napi_create_string_utf8(env, "js-ak/watchdog", NAPI_AUTO_LENGTH, &lib);
+  napi_set_named_property(env, object, "lib", lib);
+
+  if (!event.source.empty()) {
+    napi_value source;
+    napi_create_string_utf8(env, event.source.c_str(), NAPI_AUTO_LENGTH,
+                            &source);
+    napi_set_named_property(env, object, "source", source);
+  }
+
   napi_value channel;
   napi_create_string_utf8(env, event_name, NAPI_AUTO_LENGTH, &channel);
   napi_set_named_property(env, object, "channel", channel);
@@ -250,6 +261,17 @@ bool ReadConfig(napi_env env, napi_value object,
             napi_ok &&
         !path.empty()) {
       config->log_file = path;
+    }
+  }
+
+  if (napi_get_named_property(env, object, "source", &value) == napi_ok) {
+    size_t len = 0;
+    napi_get_value_string_utf8(env, value, nullptr, 0, &len);
+    std::string source(len, '\0');
+    if (napi_get_value_string_utf8(env, value, source.data(), len + 1, &len) ==
+            napi_ok &&
+        !source.empty()) {
+      config->source = source;
     }
   }
 

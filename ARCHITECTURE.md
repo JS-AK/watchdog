@@ -62,7 +62,8 @@ Responsibilities:
 
 - JSON Lines output;
 - sinks: `stderr`, `file`, or `both`;
-- best-effort writes with fallback behavior.
+- best-effort writes with fallback behavior;
+- every line includes fixed `lib: "js-ak/watchdog"`; optional `source` from config.
 
 Event classes:
 

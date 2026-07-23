@@ -44,6 +44,7 @@ const started = watchdog.start({
   heartbeatMs: 1000,
   logTarget: "stderr", // stderr | file | both
   logFile: "./watchdog.log",
+  source: "payments-api", // optional app label for monitoring
 });
 
 if (!started) {
@@ -78,6 +79,7 @@ Native side writes JSON Lines **from the monitor thread**, so freeze logs (inclu
 | `heartbeatMs` | `1000` | `1..3600000`; native log cadence while frozen (not bridged to JS) |
 | `logTarget` | `"stderr"` | `"stderr"` \| `"file"` \| `"both"` |
 | `logFile` | `"./watchdog.log"` | used when target is `file`/`both`; `getConfig()` returns the resolved absolute path |
+| `source` | omit | optional app/service label (max 256 chars); included on native JSON Lines and JS events when set. Library identity is always `lib: "js-ak/watchdog"` |
 | `captureStack` | `false` | opt-in JS stack capture (unstable). `true` or `{ mode, on, maxFrames }` — see below |
 
 ### `captureStack` (experimental)
@@ -103,6 +105,8 @@ When enabled, native logs / JS events may include:
 ```js
 {
   ts: "2026-07-22T13:18:38.696Z", // JS delivery time; native log lines use sample time
+  lib: "js-ak/watchdog", // fixed library identity
+  // source: "payments-api", // only when start({ source }) was set
   pid: 28440,
   event: "freeze_started", // JS: freeze_started | freeze_recovered | freeze_stack
                            // native logs also include freeze_heartbeat
