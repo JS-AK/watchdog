@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/JS-AK/watchdog/compare/v1.2.5...v1.3.0) (2026-07-23)
+
+
+### Features
+
+* add fixed lib and optional source markers ([fd66dce](https://github.com/JS-AK/watchdog/commit/fd66dce14c916e5f06cdc8c8698422943aedb049))
+
 ## [1.2.5](https://github.com/JS-AK/watchdog/compare/v1.2.4...v1.2.5) (2026-07-23)
 
 
