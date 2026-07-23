@@ -42,19 +42,23 @@ Notes on `ts`:
 - Opt-in stack capture is experimental and may change shape without a major bump until marked stable:
   - config: `captureStack` (`false` \| `true` \| `{ mode, on, maxFrames, maxSamples }`); default `false`;
   - `true` expands to `{ mode: "interrupt", on: "both", maxFrames: 50, maxSamples: 8 }`;
-  - additive event value `freeze_stack` (same channels as other freeze events);
-  - payload fields: `stack_status`, `stack_mode`, `stack` (`stack` only when status is `"ok"`);
+  - `mode`: `"interrupt"` (RequestInterrupt samples) or `"profile"` (V8 CpuProfiler;
+    early-arm at `freezeThresholdMs / 2`; `on` ignored);
+  - additive event value `freeze_stack` (interrupt mode; same channels as other freeze events);
+  - payload fields: `stack_status`, `stack_mode` (`"interrupt"` \| `"profile"`),
+    `stack` (`stack` only when status is `"ok"`);
   - on `freeze_recovered`: optional `stack_samples` (`[{ count, stack }, ...]`, count-desc)
-    when at least one interrupt sample succeeded; `stack` is the most frequent sample;
-  - uses V8 `RequestInterrupt` (JS busy-loop stacks; sync I/O / native blocks may yield `unavailable`;
-    under concurrent async work a sample may show only the promise microtask runner);
+    when at least one sample succeeded; `stack` is the top sample (most frequent or hottest);
+  - interrupt mode: JS busy-loop stacks; sync I/O / native blocks may yield `unavailable`;
+    under concurrent async work a sample may show only the promise microtask runner;
+  - profile mode: hit counts while armed; thin/`unavailable` possible if start never ran
+    before recover; sampling overhead while armed;
   - stack frames may include absolute file paths — treat logs as sensitive when enabled;
   - if the loaded native addon ABI (`NODE_MODULE_VERSION`) differs from the
     runtime (no matching published prebuild for this Node major),
     `captureStack` is disabled with a warning.
   - Linux prebuilds are libc-tagged (`glibc` / `musl`); loading an untagged
     glibc binary on Alpine is unsupported and may SIGSEGV under `captureStack`.
-  - A future experimental CPU-profile capture mode is reserved and not part of v1 yet.
 
 ## Behavioral guarantees
 
