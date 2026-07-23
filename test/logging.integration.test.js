@@ -50,6 +50,7 @@ describe("native logging", () => {
         heartbeatMs: 100,
         logTarget: "file",
         logFile,
+        source: "logging-test",
       }),
       true,
     );
@@ -76,6 +77,8 @@ describe("native logging", () => {
 
     for (const event of events) {
       assert.equal(typeof event.ts, "string");
+      assert.equal(event.lib, "js-ak/watchdog");
+      assert.equal(event.source, "logging-test");
       assert.equal(event.pid, process.pid);
       assert.equal(typeof event.duration_ms, "number");
       assert.equal(typeof event.rss_mb, "number");

@@ -3,7 +3,7 @@
 const { EventEmitter } = require("node:events");
 const loadAddon = require("node-gyp-build");
 const path = require("node:path");
-const { normalizeConfig, DEFAULTS } = require("./config");
+const { normalizeConfig, DEFAULTS, LIB } = require("./config");
 
 const EVENT_NAMES = new Set(["freeze", "recovered", "event"]);
 
@@ -16,6 +16,7 @@ let activeConfig = null;
 function enrich(nativeEvent) {
   const payload = {
     ts: new Date().toISOString(),
+    lib: LIB,
     pid: nativeEvent.pid || process.pid,
     event: nativeEvent.event,
     freeze_id: nativeEvent.freeze_id,
@@ -26,6 +27,10 @@ function enrich(nativeEvent) {
     rss_mb: nativeEvent.rss_mb,
     cpu_pct: nativeEvent.cpu_pct,
   };
+
+  if (typeof nativeEvent.source === "string" && nativeEvent.source.length > 0) {
+    payload.source = nativeEvent.source;
+  }
 
   if (nativeEvent.stack_status !== undefined) {
     payload.stack_status = nativeEvent.stack_status;
@@ -82,16 +87,18 @@ function start(userConfig = {}) {
     }
   }
 
-  const started = addon.start(
-    {
-      freezeThresholdMs: config.freezeThresholdMs,
-      heartbeatMs: config.heartbeatMs,
-      logTarget: config.logTarget,
-      logFile: resolvedLogFile,
-      captureStack: config.captureStack,
-    },
-    onNativeEvent,
-  );
+  const nativeConfig = {
+    freezeThresholdMs: config.freezeThresholdMs,
+    heartbeatMs: config.heartbeatMs,
+    logTarget: config.logTarget,
+    logFile: resolvedLogFile,
+    captureStack: config.captureStack,
+  };
+  if (config.source !== undefined) {
+    nativeConfig.source = config.source;
+  }
+
+  const started = addon.start(nativeConfig, onNativeEvent);
 
   if (!started) {
     return false;

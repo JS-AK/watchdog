@@ -36,6 +36,8 @@ struct Config {
   uint32_t heartbeat_ms = 1000;
   LogTarget log_target = LogTarget::Stderr;
   std::string log_file = "./watchdog.log";
+  // Optional app/service label; empty means omit `source` from payloads.
+  std::string source;
   bool capture_stack = false;
   StackCaptureOn capture_stack_on = StackCaptureOn::Started;
   uint32_t capture_stack_max_frames = 50;
@@ -78,6 +80,8 @@ struct Event {
   uint32_t pid = 0;
   double rss_mb = 0.0;
   double cpu_pct = -1.0;
+  // Optional app/service label from Config; empty means omit from payloads.
+  std::string source;
   StackStatus stack_status = StackStatus::None;
   std::string stack_mode;
   std::vector<std::string> stack;

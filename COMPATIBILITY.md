@@ -14,14 +14,17 @@ These are covered by the compatibility promise:
 
 - Methods: `start`, `stop`, `isRunning`, `getConfig`, `on`, `once`, `off`, `removeAllListeners`
 - Export: `DEFAULTS` (frozen default config values)
-- Config keys: `freezeThresholdMs`, `heartbeatMs`, `logTarget`, `logFile`
+- Config keys: `freezeThresholdMs`, `heartbeatMs`, `logTarget`, `logFile`, `source`
+  (`source` optional app/service label; omit to leave the field off payloads)
 - Event channels: `freeze`, `recovered`, `event`
 - Event payload fields:
-  - `ts`, `pid`, `event`, `freeze_id`, `duration_ms`
+  - `ts`, `lib`, `pid`, `event`, `freeze_id`, `duration_ms`
   - `threshold_ms`, `heartbeat_ms`, `sequence`
   - `rss_mb`, `cpu_pct`
+  - `source` (only when `start({ source })` was set)
 - Native JSON Lines fields with the same names as above (`event` values:
   `freeze_started`, `freeze_heartbeat`, `freeze_recovered`)
+- `lib` is always `"js-ak/watchdog"` (library identity; not configurable)
 - JS event bridge does **not** emit `freeze_heartbeat` (native logs only); this avoids
   unbounded TSFN growth while the event loop cannot drain callbacks.
 

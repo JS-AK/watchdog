@@ -161,6 +161,7 @@ void Logger::LogEvent(const Event& event) {
   json << std::fixed << std::setprecision(2);
   json << '{'
        << "\"ts\":\"" << EscapeJson(Iso8601Now()) << "\","
+       << "\"lib\":\"js-ak/watchdog\","
        << "\"event\":\"" << EventName(event.type) << "\","
        << "\"pid\":" << event.pid << ','
        << "\"freeze_id\":" << event.freeze_id << ','
@@ -170,6 +171,10 @@ void Logger::LogEvent(const Event& event) {
        << "\"threshold_ms\":" << event.threshold_ms << ','
        << "\"heartbeat_ms\":" << event.heartbeat_ms << ','
        << "\"sequence\":" << event.sequence;
+
+  if (!event.source.empty()) {
+    json << ",\"source\":\"" << EscapeJson(event.source) << '"';
+  }
 
   const char* stack_status = StackStatusName(event.stack_status);
   if (stack_status != nullptr) {

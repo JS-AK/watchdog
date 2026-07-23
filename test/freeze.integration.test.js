@@ -91,6 +91,9 @@ describe("freeze detection", () => {
     const started = events.find((e) => e.event === "freeze_started");
     const recovered = events.find((e) => e.event === "freeze_recovered");
 
+    assert.equal(started.lib, "js-ak/watchdog");
+    assert.equal(started.source, undefined);
+    assert.equal(recovered.lib, "js-ak/watchdog");
     assert.equal(started.pid, process.pid);
     assert.ok(started.duration_ms >= 120);
     assert.ok(recovered.duration_ms >= 500);
@@ -98,5 +101,10 @@ describe("freeze detection", () => {
     assert.equal(typeof started.rss_mb, "number");
     assert.ok(started.rss_mb > 0);
     assert.equal(typeof started.cpu_pct, "number");
+
+    for (const line of logLines) {
+      assert.equal(line.lib, "js-ak/watchdog");
+      assert.equal(line.source, undefined);
+    }
   });
 });

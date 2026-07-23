@@ -1,5 +1,8 @@
 "use strict";
 
+/** Stable library identity in native JSON Lines and JS event payloads. Not configurable. */
+const LIB = "js-ak/watchdog";
+
 const DEFAULT_CAPTURE_STACK = Object.freeze({
   mode: "interrupt",
   on: "started",
@@ -21,6 +24,7 @@ const MIN_MS = 1;
 const MAX_MS = 3_600_000; // 1 hour
 const MIN_STACK_FRAMES = 1;
 const MAX_STACK_FRAMES = 256;
+const MAX_SOURCE_LENGTH = 256;
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -135,16 +139,39 @@ function normalizeConfig(userConfig = {}) {
     );
   }
 
-  return {
+  let source;
+  if (config.source !== undefined) {
+    if (typeof config.source !== "string") {
+      throw new TypeError(
+        `source must be a string, got ${describeValue(config.source)}`,
+      );
+    }
+    source = config.source.trim();
+    if (source.length === 0) {
+      throw new TypeError("source must be a non-empty string");
+    }
+    if (source.length > MAX_SOURCE_LENGTH) {
+      throw new RangeError(
+        `source must be at most ${MAX_SOURCE_LENGTH} characters, got ${source.length}`,
+      );
+    }
+  }
+
+  const normalized = {
     freezeThresholdMs: config.freezeThresholdMs,
     heartbeatMs: config.heartbeatMs,
     logTarget: config.logTarget,
     logFile: config.logFile.trim(),
     captureStack: normalizeCaptureStack(config.captureStack),
   };
+  if (source !== undefined) {
+    normalized.source = source;
+  }
+  return normalized;
 }
 
 module.exports = {
+  LIB,
   DEFAULTS,
   DEFAULT_CAPTURE_STACK,
   LOG_TARGETS,
@@ -153,5 +180,6 @@ module.exports = {
   MAX_MS,
   MIN_STACK_FRAMES,
   MAX_STACK_FRAMES,
+  MAX_SOURCE_LENGTH,
   normalizeConfig,
 };
