@@ -74,24 +74,35 @@ Event classes:
 - `freeze_recovered`
 - `freeze_stack` (optional; when `captureStack` is enabled)
 
-### 4) Stack capture (opt-in)
+### 4) Stack / profile capture (opt-in)
 
-When `captureStack` is enabled, the monitor thread calls V8 `RequestInterrupt`.
+**Interrupt mode** (`mode: "interrupt"`, including `captureStack: true`):
+
+When enabled, the monitor thread calls V8 `RequestInterrupt`.
 The interrupt callback runs on the isolate thread, captures `v8::StackTrace`,
 and only stashes frames (+ queues a pending event). The monitor thread then
 writes `freeze_stack` / notifies JS — never logger or N-API from the interrupt.
 
 - Default sampling: on `freeze_started` and each `freeze_heartbeat` (`on: "both"`).
-- `"started"` / `"heartbeat"` narrow when interrupts are requested.
 - Unique stack shapes are aggregated per freeze (capped by `maxSamples`); on
   `freeze_recovered`, `stack` is the most frequent sample and `stack_samples`
   lists `{ count, stack }` sorted by count descending.
 - A single interrupt sample is not reliable attribution under many concurrent
-  async handlers (often only `processTicksAndRejections`); multi-sample helps
-  longer freezes but is not a CPU profile. A future experimental profiler mode
-  may cover that case.
-- Sync I/O / native blocks may never reach a safepoint → `stack_status: "unavailable"` (no `stack` field).
-- `freeze_stack` reuses `rss_mb` / `cpu_pct` from the latest lifecycle event so a near-zero-delta CPU sample is not emitted.
+  async handlers (often only `processTicksAndRejections`); the sample line is
+  the safepoint after native work, not always the hottest statement.
+
+**Profile mode** (`mode: "profile"`):
+
+- Arms V8 `CpuProfiler` when lag ≥ `freezeThresholdMs / 2`; discards if lag
+  drops without a freeze; on recover stops and attaches top hit-count paths as
+  `stack_samples` with `stack_mode: "profile"` (no live `freeze_stack` events).
+- Start/stop/dispose run only on the isolate thread via `RequestInterrupt`.
+- Adds sampling overhead while armed; still experimental / ABI-gated.
+
+Shared:
+
+- Sync I/O / native blocks may yield `stack_status: "unavailable"`.
+- `freeze_stack` reuses `rss_mb` / `cpu_pct` from the latest lifecycle event.
 - Implemented in-core (experimental); not a separate package.
 
 ## Freeze Detection Model
@@ -142,9 +153,9 @@ Recommended fields:
 Optional (experimental, when `captureStack` is enabled):
 
 - `stack_status` — `"ok"` \| `"unavailable"`
-- `stack_mode` — `"interrupt"`
+- `stack_mode` — `"interrupt"` \| `"profile"`
 - `stack` — string frames; present only when `stack_status` is `"ok"`
-  (on recovered: most frequent sample)
+  (on recovered: most frequent interrupt sample or hottest profile path)
 - `stack_samples` — on recovered: `[{ count, stack }, ...]` sorted by count descending
 
 ## Error Handling and Safety

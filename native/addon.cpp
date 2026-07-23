@@ -321,6 +321,22 @@ bool ReadConfig(napi_env env, napi_value object,
         config->capture_stack = true;
 
         napi_value field;
+        if (napi_get_named_property(env, value, "mode", &field) == napi_ok) {
+          size_t len = 0;
+          napi_get_value_string_utf8(env, field, nullptr, 0, &len);
+          std::string mode(len, '\0');
+          if (napi_get_value_string_utf8(env, field, mode.data(), len + 1,
+                                         &len) == napi_ok) {
+            if (mode == "profile") {
+              config->capture_stack_mode =
+                  jsak::watchdog::StackCaptureMode::Profile;
+            } else if (mode == "interrupt") {
+              config->capture_stack_mode =
+                  jsak::watchdog::StackCaptureMode::Interrupt;
+            }
+          }
+        }
+
         if (napi_get_named_property(env, value, "on", &field) == napi_ok) {
           size_t len = 0;
           napi_get_value_string_utf8(env, field, nullptr, 0, &len);
