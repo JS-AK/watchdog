@@ -1,7 +1,7 @@
 {
   "name": "@js-ak/watchdog",
   "version": "1.4.1",
-  "description": "Native watchdog for Node.js that detects event loop freezes with near-zero overhead.",
+  "description": "Native watchdog for Node.js that detects event loop lag and freezes with near-zero overhead.",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
@@ -34,8 +34,12 @@
   "keywords": [
     "nodejs",
     "event-loop",
+    "event-loop-lag",
+    "event loop lag",
+    "lag",
     "watchdog",
     "freeze",
+    "blocked",
     "monitoring",
     "napi"
   ],
