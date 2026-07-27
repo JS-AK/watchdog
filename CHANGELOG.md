@@ -1,3 +1,10 @@
+## [1.4.2](https://github.com/JS-AK/watchdog/compare/v1.4.1...v1.4.2) (2026-07-27)
+
+
+### Bug Fixes
+
+* include event loop lag keywords for npm search ([3cec6d5](https://github.com/JS-AK/watchdog/commit/3cec6d5731c35f9b27eec2ff20e9b556e7a06a87))
+
 ## [1.4.1](https://github.com/JS-AK/watchdog/compare/v1.4.0...v1.4.1) (2026-07-23)
 
 
