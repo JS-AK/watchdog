@@ -39,11 +39,17 @@ watchdog.on("recovered", (event) => {
 const started = watchdog.start({
   freezeThresholdMs: 100,
   heartbeatMs: 50,
-  logTarget: "file",
+  logTarget: "both",
   logFile,
   // Tiny cap so a short freeze rotates to <logFile>.1 (production default: 10 MiB).
   logMaxBytes: 800,
   source: "example-log-max-bytes",
+  captureStack: {
+    maxFrames: 10,
+    maxSamples: 10,
+    mode: "interrupt",
+    on: "both",
+  }
 });
 
 if (!started) {

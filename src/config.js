@@ -5,8 +5,16 @@ const LIB = "js-ak/watchdog";
 
 const DEFAULT_CAPTURE_STACK = Object.freeze({
   mode: "interrupt",
-  on: "started",
+  on: "both",
   maxFrames: 50,
+  maxSamples: 8,
+});
+
+const DEFAULT_CAPTURE_STACK_PROFILE = Object.freeze({
+  mode: "profile",
+  on: "both", // ignored by native; kept for a stable normalized shape
+  maxFrames: 50,
+  maxSamples: 8,
 });
 
 const DEFAULTS = Object.freeze({
@@ -26,6 +34,8 @@ const MIN_MS = 1;
 const MAX_MS = 3_600_000; // 1 hour
 const MIN_STACK_FRAMES = 1;
 const MAX_STACK_FRAMES = 256;
+const MIN_STACK_SAMPLES = 1;
+const MAX_STACK_SAMPLES = 32;
 const MAX_SOURCE_LENGTH = 256;
 // 0 disables in-process rotation; otherwise up to 1 GiB.
 const MIN_LOG_MAX_BYTES = 0;
@@ -79,16 +89,9 @@ function normalizeCaptureStack(value) {
   }
 
   const mode = options.mode === undefined ? DEFAULT_CAPTURE_STACK.mode : options.mode;
-  if (mode !== "interrupt") {
+  if (mode !== "interrupt" && mode !== "profile") {
     throw new TypeError(
-      `captureStack.mode must be "interrupt", got ${describeValue(mode)}`,
-    );
-  }
-
-  const on = options.on === undefined ? DEFAULT_CAPTURE_STACK.on : options.on;
-  if (!CAPTURE_STACK_ON.has(on)) {
-    throw new TypeError(
-      `captureStack.on must be one of "started", "heartbeat", "both", got ${describeValue(on)}`,
+      `captureStack.mode must be "interrupt" or "profile", got ${describeValue(mode)}`,
     );
   }
 
@@ -107,10 +110,42 @@ function normalizeCaptureStack(value) {
     );
   }
 
+  const maxSamples =
+    options.maxSamples === undefined
+      ? DEFAULT_CAPTURE_STACK.maxSamples
+      : options.maxSamples;
+  if (typeof maxSamples !== "number" || !Number.isInteger(maxSamples)) {
+    throw new TypeError(
+      `captureStack.maxSamples must be an integer, got ${describeValue(maxSamples)}`,
+    );
+  }
+  if (maxSamples < MIN_STACK_SAMPLES || maxSamples > MAX_STACK_SAMPLES) {
+    throw new RangeError(
+      `captureStack.maxSamples must be between ${MIN_STACK_SAMPLES} and ${MAX_STACK_SAMPLES}, got ${maxSamples}`,
+    );
+  }
+
+  if (mode === "profile") {
+    return Object.freeze({
+      mode,
+      on: DEFAULT_CAPTURE_STACK_PROFILE.on,
+      maxFrames,
+      maxSamples,
+    });
+  }
+
+  const on = options.on === undefined ? DEFAULT_CAPTURE_STACK.on : options.on;
+  if (!CAPTURE_STACK_ON.has(on)) {
+    throw new TypeError(
+      `captureStack.on must be one of "started", "heartbeat", "both", got ${describeValue(on)}`,
+    );
+  }
+
   return Object.freeze({
     mode,
     on,
     maxFrames,
+    maxSamples,
   });
 }
 
@@ -194,12 +229,15 @@ module.exports = {
   LIB,
   DEFAULTS,
   DEFAULT_CAPTURE_STACK,
+  DEFAULT_CAPTURE_STACK_PROFILE,
   LOG_TARGETS,
   CAPTURE_STACK_ON,
   MIN_MS,
   MAX_MS,
   MIN_STACK_FRAMES,
   MAX_STACK_FRAMES,
+  MIN_STACK_SAMPLES,
+  MAX_STACK_SAMPLES,
   MAX_SOURCE_LENGTH,
   MIN_LOG_MAX_BYTES,
   MAX_LOG_MAX_BYTES,

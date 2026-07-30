@@ -1,13 +1,25 @@
 declare namespace watchdog {
   export type CaptureStackOn = "started" | "heartbeat" | "both";
+  export type CaptureStackMode = "interrupt" | "profile";
 
   export interface CaptureStackConfig {
-    /** Capture strategy. Currently only V8 RequestInterrupt. Default: "interrupt". */
-    mode?: "interrupt";
-    /** When to request a stack sample. Default: "started". */
+    /**
+     * Capture strategy. Default: "interrupt".
+     * "profile" uses V8 CpuProfiler over the stall (early-arm at threshold/2).
+     */
+    mode?: CaptureStackMode;
+    /**
+     * When to request interrupt stack samples. Default: "both".
+     * Ignored when `mode` is `"profile"`.
+     */
     on?: CaptureStackOn;
-    /** Max JS frames to capture. Default: 50. Range: 1..256. */
+    /** Max JS frames to capture / path depth. Default: 50. Range: 1..256. */
     maxFrames?: number;
+    /**
+     * Max unique stacks (interrupt) or top hot paths (profile) on recovered.
+     * Default: 8. Range: 1..32.
+     */
+    maxSamples?: number;
   }
 
   export interface WatchdogConfig {
@@ -50,6 +62,16 @@ declare namespace watchdog {
 
   export type StackStatus = "ok" | "unavailable";
 
+  export interface StackSample {
+    /**
+     * Interrupt: how many samples matched this stack.
+     * Profile: V8 CpuProfileNode hit count for this path.
+     */
+    count: number;
+    /** Captured JS frames (`at ...`). */
+    stack: string[];
+  }
+
   export interface WatchdogEvent {
     /**
      * ISO-8601 UTC timestamp when the JS payload was built on the event loop.
@@ -80,10 +102,18 @@ declare namespace watchdog {
     cpu_pct: number;
     /** Present when stack capture is enabled for this event. */
     stack_status?: StackStatus;
-    /** Capture mode used for this stack sample. */
-    stack_mode?: "interrupt";
-    /** Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`. */
+    /** Capture mode used for this stack / profile sample. */
+    stack_mode?: CaptureStackMode;
+    /**
+     * Captured JS frames (`at ...`); omitted when `stack_status` is not `"ok"`.
+     * On `freeze_recovered`, the most frequent interrupt sample or hottest profile path.
+     */
     stack?: string[];
+    /**
+     * Unique stacks / hot paths, sorted by `count` descending.
+     * Present on `freeze_recovered` when at least one sample succeeded.
+     */
+    stack_samples?: StackSample[];
   }
 
   export type NormalizedCaptureStack = false | Readonly<Required<CaptureStackConfig>>;

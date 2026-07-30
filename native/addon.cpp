@@ -137,6 +137,32 @@ void CallJs(napi_env env, napi_value js_callback, void* /*context*/,
       }
       napi_set_named_property(env, object, "stack", stack);
     }
+
+    if (!event.stack_samples.empty()) {
+      napi_value samples;
+      napi_create_array_with_length(env, event.stack_samples.size(), &samples);
+      for (size_t i = 0; i < event.stack_samples.size(); i += 1) {
+        const jsak::watchdog::StackSample& sample = event.stack_samples[i];
+        napi_value entry;
+        napi_create_object(env, &entry);
+
+        napi_value count;
+        napi_create_uint32(env, sample.count, &count);
+        napi_set_named_property(env, entry, "count", count);
+
+        napi_value stack;
+        napi_create_array_with_length(env, sample.stack.size(), &stack);
+        for (size_t j = 0; j < sample.stack.size(); j += 1) {
+          napi_value frame;
+          napi_create_string_utf8(env, sample.stack[j].c_str(),
+                                  NAPI_AUTO_LENGTH, &frame);
+          napi_set_element(env, stack, static_cast<uint32_t>(j), frame);
+        }
+        napi_set_named_property(env, entry, "stack", stack);
+        napi_set_element(env, samples, static_cast<uint32_t>(i), entry);
+      }
+      napi_set_named_property(env, object, "stack_samples", samples);
+    }
   }
 
   napi_value undefined;
@@ -295,6 +321,22 @@ bool ReadConfig(napi_env env, napi_value object,
         config->capture_stack = true;
 
         napi_value field;
+        if (napi_get_named_property(env, value, "mode", &field) == napi_ok) {
+          size_t len = 0;
+          napi_get_value_string_utf8(env, field, nullptr, 0, &len);
+          std::string mode(len, '\0');
+          if (napi_get_value_string_utf8(env, field, mode.data(), len + 1,
+                                         &len) == napi_ok) {
+            if (mode == "profile") {
+              config->capture_stack_mode =
+                  jsak::watchdog::StackCaptureMode::Profile;
+            } else if (mode == "interrupt") {
+              config->capture_stack_mode =
+                  jsak::watchdog::StackCaptureMode::Interrupt;
+            }
+          }
+        }
+
         if (napi_get_named_property(env, value, "on", &field) == napi_ok) {
           size_t len = 0;
           napi_get_value_string_utf8(env, field, nullptr, 0, &len);
@@ -319,6 +361,15 @@ bool ReadConfig(napi_env env, napi_value object,
           if (napi_get_value_uint32(env, field, &n) == napi_ok && n > 0) {
             config->capture_stack_max_frames =
                 jsak::watchdog::ClampStackFrames(n);
+          }
+        }
+
+        if (napi_get_named_property(env, value, "maxSamples", &field) ==
+            napi_ok) {
+          uint32_t n = 0;
+          if (napi_get_value_uint32(env, field, &n) == napi_ok && n > 0) {
+            config->capture_stack_max_samples =
+                jsak::watchdog::ClampStackSamples(n);
           }
         }
       }
