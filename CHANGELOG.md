@@ -1,3 +1,11 @@
+# [1.5.0](https://github.com/JS-AK/watchdog/compare/v1.4.2...v1.5.0) (2026-07-30)
+
+
+### Features
+
+* add captureStack profile mode via CpuProfiler ([d163152](https://github.com/JS-AK/watchdog/commit/d163152678a62eda0320a18206bf5e6952faf27d))
+* aggregate interrupt stack samples per freeze ([e749264](https://github.com/JS-AK/watchdog/commit/e749264c8ae3ee2d01adc439d9b496e192fb78a5))
+
 ## [1.4.2](https://github.com/JS-AK/watchdog/compare/v1.4.1...v1.4.2) (2026-07-27)
 
 
